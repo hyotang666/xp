@@ -1188,7 +1188,7 @@ tests
 	     (if (and *print-level* (not (< d *print-level*))) (xp::princ "#" s)
 		 (xp::format s (formatter "#<foo2 ~_is ~A>") (aa ob))))
 	   (xp::defstruct (foo2 (:conc-name nil) (:print-function foo2p)) (aa 3))
-	   (plet 13 0 (list (let ((*printe-level* 1))
+	   (plet 13 0 (list (let ((*print-level* 1))
 			      (xp::format nil (formatter "~W---") (make-foo2)))
 			    (let ((*print-level* 0))
 			      (xp::format nil (formatter "~W---") (make-foo2)))
