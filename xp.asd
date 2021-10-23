@@ -8,4 +8,5 @@
    "trivial-gray-streams"	; Wrapper of gray-streams.
    "structure-ext"		; Macro converting defstruct to defclass.
    )
-  :components ((:file "xp-code")))
+  :components ((:file "xp-code"))
+  :in-order-to ((test-op (test-op "xp-test"))))
