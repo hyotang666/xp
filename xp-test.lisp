@@ -60,6 +60,19 @@
 (defvar tests nil)
 (defvar compile-tests T)
 
+(defun do-many-tests ()
+  (loop (when (null tests)
+	  (setq failed-tests (nreverse failed-tests))
+	  (if (zerop (length failed-tests))
+	      (cl:format T "~2% XP passed all tests.")
+	      (cl:format T "~2% XP failed ~A tests." (length failed-tests)))
+	  (return (values)))
+	(cl:format T " ~A" (car tests))
+	(do-test (pop tests))))
+
+(defun more ()
+  (if in-tester (throw 'in-tester nil) (do-many-tests)))
+
 (defun do-test (n)
   (catch 'in-tester
     (let* ((info (nth n test-list))
@@ -76,20 +89,11 @@
 	(when (not (equal result value))
 	  (cl:format t "~%form: ~S~% desired value ~S~%  actual value ~S~%"
 		       form value result)
-	  (cerror "Continue to test." "failed test"))
+	  (cerror "Continue to test." "failed test")
+	  (more))
 	(when pop-if-no-failure
 	  (pop failed-tests))
 	:ok))))  ;doesn't happen when abort out of error.
-
-(defun do-many-tests ()
-  (loop (when (null tests)
-	  (setq failed-tests (nreverse failed-tests))
-	  (if (zerop (length failed-tests))
-	      (cl:format T "~2% XP passed all tests.")
-	      (cl:format T "~2% XP failed ~A tests." (length failed-tests)))
-	  (return (values)))
-	(cl:format T " ~A" (car tests))
-	(do-test (pop tests))))
 
 (defun do-tests ()
   (setq xp::*format-string-cache* T)
@@ -104,9 +108,6 @@
   (cl:format T "~% Running the ~S failed tests~%" (length failed-tests))
   (setq tests failed-tests failed-tests nil)
   (do-many-tests))
-
-(defun more ()
-  (if in-tester (throw 'in-tester nil) (do-many-tests)))
 
 ;Helper funtions for tests.
 
@@ -1005,7 +1006,7 @@ linebreaks"))
 	       (xp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
 	       (let ((*package* (find-package "XP")))
-		 (xp::format nil (formatter "-~/user::foo6/-") '(1 2 3 4))))) "-123-")
+		 (xp::format nil (formatter "-~/xp-test::foo6/-") '(1 2 3 4))))) "-123-")
   (test-def ((defun bar (xp &rest objects)
 	       (xp::format xp (formatter "~{~A~}") objects))
 	     (plet 20 0
@@ -1013,7 +1014,7 @@ linebreaks"))
 
 ;tests of xp's special printing functions.
 
-  ((let ((s (make-array 20 :element-type 'string-char :fill-pointer 0)))
+  ((let ((s (make-array 20 :element-type 'character :fill-pointer 0)))
      (list (xp::format s (formatter "test~A ") "ing")
 	   (xp::format s (formatter "test~A ") "ing")
 	   s))
@@ -1210,7 +1211,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (format xp (formatter "~@{~@<ZOTZ-~W~:>~}") (cadr list))) 0 *dt*)
+	    (xp::format xp (formatter "~@{~@<ZOTZ-~W~:>~}") (cadr list))) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
 		   (xp::format nil (formatter "~W")
 			       '((zotz 1) (zotz 2) (zotz 3))))))
@@ -1218,8 +1219,8 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
-	'(lambda (xp list)
-	   (format xp (formatter "~@<ZOTZ-~W~:>") (cadr list))) 0 *dt*)
+	#'(lambda (xp list)
+	   (xp::format xp (formatter "~@<ZOTZ-~W~:>") (cadr list))) 0 *dt*)
       (plet 60 0 (let ((*print-shared* t))
 		   (xp::format nil (formatter "~W")
 			       (read-from-string
@@ -1229,7 +1230,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
+	    (xp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
 		   (xp::format nil (formatter "~W")
 			       '((zotz 1) (zotz 2) (zotz 3))))))
@@ -1238,7 +1239,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
+	    (xp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
 		   (xp::format nil (formatter "~W")
 			       (read-from-string

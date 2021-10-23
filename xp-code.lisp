@@ -393,7 +393,10 @@
   (defvar prefix-min-size 256.)
   (defvar suffix-min-size 256.)) 
 
-(cl:defstruct (xp-structure (:conc-name nil) (:print-function describe-xp))
+(structure-ext:defstruct*
+    (xp-structure (:conc-name nil)
+		  (:print-function describe-xp)
+		  (:include trivial-gray-streams:fundamental-character-output-stream))
   (BASE-STREAM nil) ;;The stream io eventually goes to.
   LINEL ;;The line length to use for formatting.
   LINE-LIMIT ;;If non-NIL the max number of lines to print.
@@ -1289,6 +1292,10 @@
 	       (setf (gethash string-or-fn *format-string-cache*) value))
 	     value))))
 
+(defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
+  (write-char+ char output)
+  char)
+
 (defun write-char (char &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
   (if (xp-structure-p stream)
@@ -1638,7 +1645,7 @@
 (defmacro formatter (string)
   `(function
     (lambda (s &rest args)
-      (formatter-in-package ,string "USER"))))
+      (formatter-in-package ,string ,(package-name *package*)))))
 
 (defun formatter-fn (*string* *default-package*)
   (or (catch :format-compilation-error
@@ -1851,7 +1858,7 @@
   (multiple-value-bind (colon atsign params) (parse-params start nil :max nil)
     (let* ((whole-name-start (1+ (params-end start)))
 	   (colon-pos (position #\: *string* :start whole-name-start :end (1- end)))
-	   (pkg (find-package
+	   (pkg (uiop:find-package*
 		  (if colon-pos
 		      (string-upcase (subseq *string* whole-name-start colon-pos))
 		      *default-package*)))
