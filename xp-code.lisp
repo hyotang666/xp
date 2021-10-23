@@ -1495,8 +1495,8 @@
 
  (eval-when (:execute :load-toplevel :compile-toplevel)
 
-(proclaim '(special *string* *used-args* *used-outer-args* *used-initial*
-		    *get-arg-carefully* *inner-end* *outer-end* *at-top*))
+(declaim (special *string* *used-args* *used-outer-args* *used-initial*
+		  *get-arg-carefully* *inner-end* *outer-end* *at-top*))
 
 (defvar *fn-table* (make-hash-table) "used to access fns for commands")
 
@@ -1623,7 +1623,7 @@
 
 ;This is available for putting on #".
 
-(proclaim '(special *default-package*))
+(defvar *default-package*)
 
 (defun format-string-reader (stream sub-char arg)
     (declare (ignore arg))
@@ -2260,7 +2260,7 @@
 	      (write-char++ #\space xp)
 	      (pprint-newline+ :fill xp))))))
 
-(proclaim '(special *prefix*))
+(defvar *prefix*)
 
 (defun pretty-non-vector (xp array)
   (let* ((bottom (1- (array-rank array)))
