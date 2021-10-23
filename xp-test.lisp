@@ -47,21 +47,14 @@
 #+:symbolics(use-package "CL")
 
 (in-package :cl-user)
-(defpackage :xp-test (:use :cl)
-  (:shadowing-import-from :xp
-			  formatter copy-pprint-dispatch pprint-dispatch
-	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
-	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
-	   pprint-newline pprint-indent pprint-tab
-	   *print-pprint-dispatch* *print-right-margin*
-	   *print-miser-width* *print-lines*)
+(uiop:define-package :xp-test (:mix :xp :cl)
   (:export #:do-tests
 	   #:more
 	   #:do-failed-tests
 	   #:do-test))
 (in-package :xp-test)
 
-(eval-when (:execute :load-toplevel :compile-toplevel) (xp::install #+symbolics :macro #+symbolics T))
+;; (eval-when (:execute :load-toplevel :compile-toplevel) (xp::install #+symbolics :macro #+symbolics T))
 (declaim (special form test-list failed-tests *dt*))
 (defvar in-tester nil)
 (defvar tests nil)
@@ -70,8 +63,7 @@
 (defun do-test (n)
   (catch 'in-tester
     (let* ((info (nth n test-list))
-	   (*package* (find-package :cl-user))
-	   (*break-on-signals* T)
+	   (*package* (find-package :xp-test))
 	   (tester (if (symbolp (car info)) (pop info) 'test-ordinary))
 	   (value (cadr info))
 	   (pop-if-no-failure nil)
@@ -84,7 +76,7 @@
 	(when (not (equal result value))
 	  (cl:format t "~%form: ~S~% desired value ~S~%  actual value ~S~%"
 		       form value result)
-	  (error "failed test"))
+	  (cerror "Continue to test." "failed test"))
 	(when pop-if-no-failure
 	  (pop failed-tests))
 	:ok))))  ;doesn't happen when abort out of error.
@@ -136,8 +128,8 @@
 ;This tests things where cl:format and xp::format must always be identical.
 
 (defmacro formats (f-string &rest args)
-  `(if (not (string= (cl:format nil ,f-string .,args)
-		     (xp::format nil (formatter ,f-string) .,args)))
+  `(if (not (string= (cl:format nil ,f-string ,@args)
+		     (xp::format nil (formatter ,f-string) ,@args)))
        'format-xp-and-format-disagree))
 
 ;this compares FORMAT-XP with FORMAT only on the lispm, so that bugs
@@ -151,7 +143,7 @@
        (if (string= format-value xp-value) xp-value
 	   `(xp-format-output ,xp-value and
 			      lisp-format-output ,format-value disagree)))
-  #-symbolics`(xp::format nil .,format-xp-stuff)))
+  #-symbolics`(xp::format nil ,@format-xp-stuff)))
 
 (defmacro plet (width miser &body body)
   `(let ((*PRINT-RIGHT-MARGIN* ,width)
@@ -166,7 +158,7 @@
 	 (*PRINT-LEVEL* 100)
 	 (*PRINT-LENGTH* NIL)
 	 (*PRINT-LINES* NIL))
-     .,body))
+     ,@body))
 
 ;used to test cases where xp defaults to ordinary non-pretty printing
 
