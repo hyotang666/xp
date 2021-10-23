@@ -1770,7 +1770,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
    "(ETYPECASE TYPE
   (:FOO (PRINT 3)))")
   ((ftest 20 0 '(eval-when (:compile-toplevel :load-toplevel) (defun foo () (car x))))
-   "(EVAL-WHEN (COMPILE LOAD)
+   "(EVAL-WHEN (:COMPILE-TOPLEVEL :LOAD-TOPLEVEL)
   (DEFUN FOO ()
     (CAR X)))")
 
