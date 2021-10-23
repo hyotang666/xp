@@ -45,45 +45,33 @@
 ;(DO-TEST n) runs just the test with the given number. 
 
 #+:symbolics(use-package "CL")
-(in-package "USER")
-(eval-when (eval load compile) (xp::install #+symbolics :macro #+symbolics T))
-(proclaim '(special form test-list failed-tests *dt*))
+
+(in-package :cl-user)
+(defpackage :xp-test (:use :cl)
+  (:shadowing-import-from :xp
+			  formatter copy-pprint-dispatch pprint-dispatch
+	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
+	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
+	   pprint-newline pprint-indent pprint-tab
+	   *print-pprint-dispatch* *print-right-margin*
+	   *print-miser-width* *print-lines*)
+  (:export #:do-tests
+	   #:more
+	   #:do-failed-tests
+	   #:do-test))
+(in-package :xp-test)
+
+(eval-when (:execute :load-toplevel :compile-toplevel) (xp::install #+symbolics :macro #+symbolics T))
+(declaim (special form test-list failed-tests *dt*))
 (defvar in-tester nil)
 (defvar tests nil)
 (defvar compile-tests T)
 
-(defun do-tests ()
-  (setq xp::*format-string-cache* T)
-  (lisp:format T "~% Running the suite of ~S test cases~%" (length test-list))
-  (setq tests (do ((i (1- (length test-list)) (1- i))
-		   (r nil (cons i r)))
-		  ((minusp i) r))
-	failed-tests nil)
-  (do-many-tests))
-
-(defun do-failed-tests ()
-  (lisp:format T "~% Running the ~S failed tests~%" (length failed-tests))
-  (setq tests failed-tests failed-tests nil)
-  (do-many-tests))
-
-(defun do-many-tests ()
-  (loop (when (null tests)
-	  (setq failed-tests (nreverse failed-tests))
-	  (if (zerop (length failed-tests))
-	      (lisp:format T "~2% XP passed all tests.")
-	      (lisp:format T "~2% XP failed ~A tests." (length failed-tests)))
-	  (return (values)))
-	(lisp:format T " ~A" (car tests))
-	(do-test (pop tests))))
-
-(defun more ()
-  (if in-tester (throw 'in-tester nil) (do-many-tests)))
-
 (defun do-test (n)
   (catch 'in-tester
     (let* ((info (nth n test-list))
-	   (*package* (find-package "USER"))
-	   (*break-on-warnings* T)
+	   (*package* (find-package :cl-user))
+	   (*break-on-signals* T)
 	   (tester (if (symbolp (car info)) (pop info) 'test-ordinary))
 	   (value (cadr info))
 	   (pop-if-no-failure nil)
@@ -94,12 +82,39 @@
 	(setq pop-if-no-failure T))
       (let ((result (funcall tester (copy-tree form))))
 	(when (not (equal result value))
-	  (lisp:format t "~%form: ~S~% desired value ~S~%  actual value ~S~%"
+	  (cl:format t "~%form: ~S~% desired value ~S~%  actual value ~S~%"
 		       form value result)
 	  (error "failed test"))
 	(when pop-if-no-failure
 	  (pop failed-tests))
 	:ok))))  ;doesn't happen when abort out of error.
+
+(defun do-many-tests ()
+  (loop (when (null tests)
+	  (setq failed-tests (nreverse failed-tests))
+	  (if (zerop (length failed-tests))
+	      (cl:format T "~2% XP passed all tests.")
+	      (cl:format T "~2% XP failed ~A tests." (length failed-tests)))
+	  (return (values)))
+	(cl:format T " ~A" (car tests))
+	(do-test (pop tests))))
+
+(defun do-tests ()
+  (setq xp::*format-string-cache* T)
+  (cl:format T "~% Running the suite of ~S test cases~%" (length test-list))
+  (setq tests (do ((i (1- (length test-list)) (1- i))
+		   (r nil (cons i r)))
+		  ((minusp i) r))
+	failed-tests nil)
+  (do-many-tests))
+
+(defun do-failed-tests ()
+  (cl:format T "~% Running the ~S failed tests~%" (length failed-tests))
+  (setq tests failed-tests failed-tests nil)
+  (do-many-tests))
+
+(defun more ()
+  (if in-tester (throw 'in-tester nil) (do-many-tests)))
 
 ;Helper funtions for tests.
 
@@ -118,10 +133,10 @@
   (let ((xp::*testing-errors* T))
      (catch :testing-errors (eval form))))
 
-;This tests things where lisp:format and xp::format must always be identical.
+;This tests things where cl:format and xp::format must always be identical.
 
 (defmacro formats (f-string &rest args)
-  `(if (not (string= (lisp:format nil ,f-string .,args)
+  `(if (not (string= (cl:format nil ,f-string .,args)
 		     (xp::format nil (formatter ,f-string) .,args)))
        'format-xp-and-format-disagree))
 
@@ -137,7 +152,7 @@
 	   `(xp-format-output ,xp-value and
 			      lisp-format-output ,format-value disagree)))
   #-symbolics`(xp::format nil .,format-xp-stuff)))
-
+
 (defmacro plet (width miser &body body)
   `(let ((*PRINT-RIGHT-MARGIN* ,width)
 	 (*PRINT-MISER-WIDTH* ,miser)
@@ -159,16 +174,16 @@
   `(plet 50 0
      (let* (,@ bindings
 	    (xp-result (xp::write-to-string ,thing))
-	    (normal-result (let ((*print-pretty* nil)) (lisp:write-to-string ,thing))))
+	    (normal-result (let ((*print-pretty* nil)) (cl:write-to-string ,thing))))
        (if (not (string= xp-result normal-result))
-	   `("xp::print-output" ,xp-result and "lisp::print-output"
+	   `("xp::print-output" ,xp-result and "cl::print-output"
 	     ,normal-result disagree)))))
 
 (defmacro print*s (thing &rest bindings)
   `(plet 50 0
      (let* (,@ bindings
 	    (xp-result (xp::write-to-string ,thing))
-	    (normal-result (lisp:write-to-string ,thing)))
+	    (normal-result (cl:write-to-string ,thing)))
        (if (string= xp-result normal-result) normal-result
 	   `(print*-output ,xp-result and print-output
 			   ,normal-result disagree)))))
@@ -186,7 +201,7 @@
 
 (defmacro ftest (width miser form &rest bindings)
   `(plet ,width ,miser (let ,bindings (xp::write-to-string ,form))))
-
+
 (setq test-list '(
 
 ;the first bunch of tests test the format directives that xp actually
@@ -231,7 +246,7 @@
   ((formats "~A-~10<~A~;~A~>-~A" 1 'foo 'bar 2))
   ((formats "~A-~V:<~A~;~A~>-~A" 1 10 'foo 'bar 2))
   ((formats "~A-~10<~(~A~)~;~?~>-~A" 1 'foo "+~A" '(2) 'bar))
-
+
 ;this next set of tests tests format codes which are supposed
 ;to be supported exactly the same by xp and format, but are actually
 ;performed directly by xp.  These are compared with the expected
@@ -462,7 +477,7 @@ test")
 
 ;; ~^ tested in the relevant subcontexts above and below
 
-
+
 ;the following test extended features of standard format codes.
 
   ((xp::format nil (formatter "test~:ta")) "test a")
@@ -502,7 +517,7 @@ test a")
 
   ((xp::format nil (formatter "fo-~<test~6,4ta~:>") nil) "fo-test   a")
   ((xp::format nil (formatter "fo-~<test~6,3ta~:>") nil) "fo-test  a")
-
+
 ;The following test the special pretty printing directives.
 
   ;first two tests disabled, should actually be errors.
@@ -1003,7 +1018,7 @@ linebreaks"))
 	       (xp::format xp (formatter "~{~A~}") objects))
 	     (plet 20 0
 	       (xp::format nil (formatter "-~?-") #'bar '(1 2 3 4)))) "-1234-")
-
+
 ;tests of xp's special printing functions.
 
   ((let ((s (make-array 20 :element-type 'string-char :fill-pointer 0)))
@@ -1195,7 +1210,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   (deftest
     (progn (xp::defstruct (foo4 (:include foo2)) (e 1))
 	   (prints (make-foo4))))
-
+
 ;Tests of things about dispatching
 
   ((progn (setq *dt* (copy-pprint-dispatch nil)) nil))
@@ -1355,7 +1370,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
       (let ((data (make-foo :a 11 :b 21)))
 	(plet 20 0 (xp::format nil (formatter "~W") data))))
     "foo-11-21")
-
+
 ;Tests of the functional interface to the dynamic formatting things.
 
   ((progn (setq *dt* (copy-pprint-dispatch nil)) nil))
@@ -1515,7 +1530,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
    "---#--")
   ((plet 21 0 (let ((*print-level* 0)) (xp::format nil (formatter "---~5:/my-pprint-tabular/--") ())))
    "---#--")
-
+
 ;tests of formats for various special forms.
 
   ((progn (setq *print-pprint-dispatch* (copy-pprint-dispatch)) nil))
@@ -1761,7 +1776,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   ((ftest 20 0 '(etypecase type (:foo (print 3))))
    "(ETYPECASE TYPE
   (:FOO (PRINT 3)))")
-  ((ftest 20 0 '(eval-when (compile load) (defun foo () (car x))))
+  ((ftest 20 0 '(eval-when (:compile-toplevel :load-toplevel) (defun foo () (car x))))
    "(EVAL-WHEN (COMPILE LOAD)
   (DEFUN FOO ()
     (CAR X)))")
@@ -1960,7 +1975,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   ((ftest 35 0 '(with-output-to-string (f string) (print f)))
    "(WITH-OUTPUT-TO-STRING (F STRING)
   (PRINT F))")
-
+
 ;These test the fast printing of simple atoms performed directly by XP
 
   ((print*s "foo") "\"foo\"")
@@ -2002,7 +2017,7 @@ o\"")
   ((prints '%))
   ((prints '#*10101))
   ((prints '#2A((12 3456 789) (22 456 78)) (*print-array* nil)))
-
+
 ;Tests of circularity printing.
 
   ((print*c "(A A NIL NIL B B)" (*print-shared* T))
@@ -2097,7 +2112,7 @@ o\"")
    "#1=(1 A #1#)")
   ((format*c (formatter "~:<~W ~W ~:@<~W ~W~:>~:>") "#1=(1 . #1#)" (*print-shared* T))
    "#1=(1 . #1#)")
-
+
 ;Some tests for particular problems that came up along the way
 
   ((plet 15 0 (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
@@ -2154,7 +2169,7 @@ eee")
        (xp::format nil (formatter "~:<---~<~;~a ~_~a ~_~a~;>+~:>--~:>") '((12 3456 789)))))
    "(---12
     3456 ..>+)")
-   
+
 ;tests of obscure control paths.
 
    ((plet 20 0 (with-output-to-string (s)
@@ -2176,22 +2191,22 @@ eee")
  #-franz-inc
   ((progn (setq xp::*free-xps* nil)
 	  (plet 400 0 (xp::format nil (formatter "~@<foo ~300ia~:@_b~305i~:@_c~:>"))))
-   #,(lisp:format nil "foo a~%~300@Tb~%~305@Tc"))
+   #.(cl:format nil "foo a~%~300@Tb~%~305@Tc"))
 
  #-franz-inc
   ((progn (setq xp::*free-xps* nil)
 	  (plet 400 0
 	    (xp::format nil (formatter "~@<foo ~250ia~:@_~@<0123456~@;b~@<++++~@;c~:@_d~:>~:>~:>"))))
-   #,(lisp:format nil "foo a~%~250@T0123456b++++c~%~250@T0123456 ++++d"))
+   #.(cl:format nil "foo a~%~250@T0123456b++++c~%~250@T0123456 ++++d"))
 
  #-franz-inc
   ((progn (setq xp::*free-xps* nil)
 	  (plet 400 0 (xp::format nil (formatter "~@<~250@Ta~_~10@Tb~5@Tc~:>"))))
-   #,(lisp:format nil "~250@Ta~10@Tb~5@Tc"))
+   #.(cl:format nil "~250@Ta~10@Tb~5@Tc"))
  #-franz-inc
   ((progn (setq xp::*free-xps* nil)
 	  (plet 200 0 (xp::format nil (formatter "~@<~250@Ta~10@Tb~5@Tc~:>"))))
-   #,(lisp:format nil "~250@Ta~10@Tb~5@Tc"))
+   #.(cl:format nil "~250@Ta~10@Tb~5@Tc"))
 
   ((progn (setq xp::*free-xps* nil)
 	  (plet 85 0 (xp::format nil (formatter "~W") 
@@ -2214,7 +2229,7 @@ eee")
  1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
  1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
  1 1 1 1 1 1 1 1)")
-
+
 ;testing error checking
 
   (etest (xp::format nil (formatter "ab~1,2")) (1 2))
@@ -2243,7 +2258,7 @@ eee")
   (etest (xp::format nil (formatter "ab ~<f~;g~;h~;f~:>foo")) (24 4))
   (etest (xp::format nil (formatter "ab ~<f~Af~;g~;h~:>foo")) (25 5))
   (etest (xp::format nil (formatter "ab ~<f~;g~;h~Ag~:>foo")) (26 11))
-
+
 ;tests added in later releases.
 
    ((xp::format nil "A ~:<1 ~_2~:>~%B" nil)
@@ -2331,7 +2346,7 @@ B")
   ((ftest 55 0 '``(,,X)) "``(,,X)")
 
   ((ftest 55 0 '`(,a ,b ,c) (*print-circle* t) (*print-shared* t)) "`(,A ,B ,C)")
-
+
 ;tests of things that only work on Symbolics machines.
 
 #+symbolics  ;the ~V~ gives many CLs fits.
