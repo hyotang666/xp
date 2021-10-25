@@ -111,20 +111,12 @@
 
 ;default (bad) definitions for the non-portable functions
 
-#-(or :lucid :franz-inc :cmu)(eval-when (:execute :load-toplevel :compile-toplevel)
+#-(or :franz-inc :cmu)(eval-when (:execute :load-toplevel :compile-toplevel)
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
 (defun output-position  (&optional (s *standard-output*)) (declare (ignore s)) nil) )
 
 
-
-;XP is being considered for inclusion in Lucid Common Lisp.
-;The prime contact there is Eric Benson "eb@lucid.com".
-
-#+:lucid(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun structure-type-p (x) (subtypep x 'structure))
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
-(defun output-position  (&optional (s *standard-output*)) (declare (ignore s)) nil) )
 
 
 ;XP is being included in CMU's Common Lisp.
@@ -144,30 +136,6 @@
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
 (defun output-position  (&optional (s *standard-output*)) (excl::charpos s)) )
-
-
-; Joachim Laubsch <laubsch%hpljl@hplabs.hp.com> is the contact at HP Labs.
-; He reports that HP COMMON LISP II Development Environment Rev A.02.15 11/10/88
-; requires the following patch due to a bug in REPLACE:
-
-#+(and lucid hp (not patched))
-(eval-when (:execute :load-toplevel)
-  (system::defadvice (replace patch)
-      (SEQUENCE1 SEQUENCE2 &KEY (START1 0) END1 (START2 0) END2)
-    (declare (fixnum START1 START2))
-    (let ((copy-length (min (- (or end1 (length SEQUENCE1)) START1)
-			    (- (or end2 (length SEQUENCE2)) START2))))
-      (declare (fixnum copy-length))
-      (if (= 0 copy-length)
-	  SEQUENCE1
-	(system::apply-advice-continue SEQUENCE1 SEQUENCE2
-				       :START1 START1
-				       :END1 (+ START1 copy-length)
-				       :START2 START2
-				       :END2 (+ START2 copy-length)
-				       ()))
-	
-      )))
 
 
 (declaim (type (or null integer) *locating-circularities*))
@@ -2826,17 +2794,17 @@
 ;both print out as `'(a .,b), because the backquote reader produces the
 ;same code in both cases.
 
-(defvar *bq-list* #+:lucid 'lucid-runtime-support:bq-list)
-(defvar *bq-list** #+:lucid 'lucid-runtime-support:bq-list*)
-(defvar *bq-cons* #+:lucid 'lucid-runtime-support:bq-cons)
-(defvar *bq-append* #+:lucid 'lucid-runtime-support:bq-append)
-(defvar *bq-nconc* #+:lucid 'lucid-runtime-support:bq-nconc)
+(defvar *bq-list*)
+(defvar *bq-list**)
+(defvar *bq-cons*)
+(defvar *bq-append*)
+(defvar *bq-nconc*)
 
 (defun bq-print (xp obj)
   (funcall (formatter "`~W") xp (bqtify obj)))
 
-(defvar *bq-vector* #+:lucid 'lucid-runtime-support:bq-nconc)
-(defvar *bq-list-to-vector* #+:lucid 'lucid-runtime-support:bq-nconc) ;turned off
+(defvar *bq-vector*)
+(defvar *bq-list-to-vector*) ;turned off
 
 (defun bq-vector-print (xp obj)
   (funcall (xp:formatter "`#~W") xp (car (bqtify obj))))
@@ -2899,16 +2867,6 @@
 
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)
-
-#+(or :lucid)(eval-when (:execute :load-toplevel)
-(set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-cons*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list**)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-append*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-nconc*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-vector*)) #'bq-vector-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list-to-vector*)) #'bq-vector-print 0 *IPD*) )
 
 (set-pprint-dispatch+ '(cons (member defstruct)) #'block-like 0 *IPD*)
 (set-pprint-dispatch+ '(cons (member block)) #'block-like 0 *IPD*)
