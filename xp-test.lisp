@@ -187,7 +187,7 @@
 (defmacro print*c (thing &rest bindings)
   (push '(*print-circle* T) bindings)
   `(plet 150 0
-     (let* ,bindings (write-to-string (read-from-string ,thing)))))
+     (let* ,bindings (xp::write-to-string (read-from-string ,thing)))))
 
 (defmacro format*c (string thing &rest bindings)
   (push '(*print-circle* T) bindings)
