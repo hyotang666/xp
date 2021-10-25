@@ -69,8 +69,7 @@
 	   *print-pprint-dispatch* *print-right-margin* #:*default-right-margin*
 	   *print-miser-width* *print-lines*
 	   #:*last-abbreviated-printing*
-	   *print-shared*
-	   #+symbolics #:pp))
+	   *print-shared*))
 
 (in-package :xp)
 
@@ -112,18 +111,11 @@
 
 ;default (bad) definitions for the non-portable functions
 
-#-(or :symbolics :lucid :franz-inc :cmu)(eval-when (:execute :load-toplevel :compile-toplevel)
+#-(or :lucid :franz-inc :cmu)(eval-when (:execute :load-toplevel :compile-toplevel)
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
 (defun output-position  (&optional (s *standard-output*)) (declare (ignore s)) nil) )
 
-
-#+:symbolics(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun structure-type-p (x) (and (symbolp x) (get x 'si:defstruct-description)))
-(defun output-width     (&optional (s *standard-output*))
-  (si:send s :send-if-handles :size-in-characters))
-(defun output-position  (&optional (s *standard-output*))
-  (si:send s :send-if-handles :read-cursorpos :character)) )
 
 
 ;XP is being considered for inclusion in Lucid Common Lisp.
@@ -176,9 +168,6 @@
 				       ()))
 	
       )))
-
-#+symbolics
-(defvar original-trace-print nil)
 
 
 (declaim (type (or null integer) *locating-circularities*))
@@ -1188,7 +1177,6 @@
 				',(copy-list args))))))))
 	*result*)))
 
-#-symbolics
 (defun xp-print (fn stream args)
   (setq *result* (do-xp-printing fn stream args))
   (when *locating-circularities*
@@ -1343,8 +1331,7 @@
 		       (:capitalize :cap1)
 		       (T nil)))) ;note no-escapes-needed requires all caps
 	   (cond ((and (or is-key (eq p *package*)
-			   (and *package* ;can be NIL on symbolics
-				(eq object (find-symbol s))))
+			   (eq object (find-symbol s)))
 		       (no-escapes-needed s))
 		  (when (and is-key *print-escape*)
 		    (write-char++ #\: xp))
@@ -2839,24 +2826,17 @@
 ;both print out as `'(a .,b), because the backquote reader produces the
 ;same code in both cases.
 
-(defvar *bq-list* #+:lucid 'lucid-runtime-support:bq-list
-	          #+:symbolics 'si:xr-bq-list)
-(defvar *bq-list** #+:lucid 'lucid-runtime-support:bq-list*
-	           #+:symbolics 'si:xr-bq-list*)
-(defvar *bq-cons* #+:lucid 'lucid-runtime-support:bq-cons
-	          #+:symbolics 'si:xr-bq-cons)
-(defvar *bq-append* #+:lucid 'lucid-runtime-support:bq-append
-	            #+:symbolics 'si:xr-bq-append)
-(defvar *bq-nconc* #+:lucid 'lucid-runtime-support:bq-nconc
-	           #+:symbolics 'si:xr-bq-nconc)
+(defvar *bq-list* #+:lucid 'lucid-runtime-support:bq-list)
+(defvar *bq-list** #+:lucid 'lucid-runtime-support:bq-list*)
+(defvar *bq-cons* #+:lucid 'lucid-runtime-support:bq-cons)
+(defvar *bq-append* #+:lucid 'lucid-runtime-support:bq-append)
+(defvar *bq-nconc* #+:lucid 'lucid-runtime-support:bq-nconc)
 
 (defun bq-print (xp obj)
   (funcall (formatter "`~W") xp (bqtify obj)))
 
-(defvar *bq-vector* #+:lucid 'lucid-runtime-support:bq-nconc
-	           #+:symbolics (list nil)) ;turned off
-(defvar *bq-list-to-vector* #+:lucid 'lucid-runtime-support:bq-nconc
-	                    #+:symbolics (list nil)) ;turned off
+(defvar *bq-vector* #+:lucid 'lucid-runtime-support:bq-nconc)
+(defvar *bq-list-to-vector* #+:lucid 'lucid-runtime-support:bq-nconc) ;turned off
 
 (defun bq-vector-print (xp obj)
   (funcall (xp:formatter "`#~W") xp (car (bqtify obj))))
@@ -2920,7 +2900,7 @@
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)
 
-#+(or :lucid :symbolics)(eval-when (:execute :load-toplevel)
+#+(or :lucid)(eval-when (:execute :load-toplevel)
 (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
 (set-pprint-dispatch+ `(cons (member ,*bq-cons*)) #'bq-print 0 *IPD*)
 (set-pprint-dispatch+ `(cons (member ,*bq-list*)) #'bq-print 0 *IPD*)
@@ -3011,185 +2991,6 @@
 
 (set-pprint-dispatch+ 'pprint-dispatch #'pprint-dispatch-print 0 *IPD*)
 
-;       ---- THINGS THAT ONLY WORK ON SYMBOLICS MACHINES ----
-
-;The following are a number of special things that work on the
-;Symbolics Lisp Machine only.  Similar things may be possible on
-;other systems.
-
-#+symbolics
-(eval-when (:execute :load-toplevel)
-
-;must be careful to avoid an infinite loop, because XP calls write,
-;which obeys scl:*print-pretty-printer*.
-
-(defvar *allow-errors* nil)
-
-(defun default-system-printing (object template stream)
-    (declare (ignore template))
-  (si:print-object object *current-level* *print-escape* stream))
-
-(defun pretty-printer (object template stream)
-    (declare (ignore template))
-  (let ((scl:*print-pretty-printer* #'default-system-printing))
-    (setq stream (decode-stream-arg stream))
-    (if (or *allow-errors* (and (streamp stream) (not (scl:send stream :interactive))))
-	(let ((*allow-errors* nil)) (format stream (formatter "~w") object))
-	(unless (scl:ignore-errors (format stream (formatter "~w") object) t)
-	  (let ((*print-pretty* nil))
-	    (cl:princ "#<Cannot pretty print " stream)
-	    (unless (scl:ignore-errors (cl:write object :stream stream) t)
-	      (cl:princ "#<Cannot print value of " stream)
-	      (cl:princ (sys:%p-pointer object) stream)
-	      (cl:princ ">" stream)))
-	  (cl:princ ">" stream))))
-  object)
-
-(defun xp-print (fn stream args &optional (recursive nil))
-  (unless (and (not recursive)
-	       (si:send-if-handles stream :xp fn stream args))
-    (setq *result* (do-xp-printing fn stream args))
-    (when *locating-circularities*
-      (setq *locating-circularities* nil)
-      (setq *abbreviation-happened* nil)
-      (setq *parents* nil)
-      (setq *result* (do-xp-printing fn stream args)))))
-
-(defun xp-sensitivity-print (fn stream args)
-  (let* ((object (cond ((and args (null (cdr args))) (car args))
-		       ((copy-list args))))) ;in case is in stack
-    (si:with-sensitivity-flag (object stream)
-      (xp-print fn stream args T))
-    T))
-dw::
-(defmethod (:xp dynamic-window) (fn stream args)
-  (xp::xp-sensitivity-print fn stream args))
-zwei::
-(defmethod (:xp presentation-recording-interval-stream) (fn stream args)
-    (xp::xp-sensitivity-print fn stream args))
-zwei::
-(defmethod (:xp mini-ie-stream) mini-ie-forward-output-message)
-
-;didn't bother with (:xp filling-stream) see (:gprint filling-stream).
-
-;see the method (:gprint dynamic-window) and the file gprint for
-;info about how to really make everything mousable.
-
-dw::
-(define-presentation-translator print-without-abbreviation ;modelled on describe-form
-  (expression form
-   :gesture :print-without-abbreviation
-   :documentation "Pretty print in full"
-   :priority 3.0)
-   (object)
-  `(xp::pp1 ',object))
-
-(setf (dw::mouse-char-for-gesture :print-without-abbreviation) #\mouse-m)
-
-(defun xp::pp1 (x)
-  (pp x)
-  (setq *** ** ** * * x)
-  (values))
-
-(defun pp1-print (xp obj)
-  (setf (line-limit xp) 1)
-  (funcall (formatter "~W") xp (cons 'pp (cdr obj))))
-
-(set-pprint-dispatch+ '(cons (member pp1)) #'pp1-print 0 *IPD*)
-
-#|
-;The following seems to cause problems in Genera 8.0.1 and does not
-;seem all that worth saving, since we now have mousability.
-
-(defun re-pretty-print-in-full (ignore)
-  (zl:send tv:selected-window :refresh-rubout-handler)
-  (let ((*print-lines* nil)
-	(*print-length* nil)
-	(*print-level* nil))
-    (cl:fresh-line tv:selected-window)
-    (funcall (scl:symbol-value-in-stack-group '*last-abbreviated-printing*
-	       (zl:send (zl:send tv:selected-window :process) :stack-group))
-	     tv:selected-window))
-  (when (and (zl:send tv:selected-window :interactor-p)
-	     (not (and (typep tv:selected-window 'tv:basic-typeout-window)
-		       (zl:send tv:selected-window :incomplete-p))))
-    (cl:terpri tv:selected-window)
-    (if (stringp si:*cp-prompt*) (cl:princ si:*cp-prompt* tv:selected-window)
-	(funcall si:*cp-prompt* tv:selected-window nil))
-    (zl:send tv:selected-window :refresh-rubout-handler)))
-
-;The above can be installed by doing
-;(tv:add-function-key #\resume 're-pretty-print-in-full
-;		      "print without length, line, or level abbreviation")
-|#
-
-;The following allows XP to utilize the information maintained by the ZWEI
-;editor about how various forms should be indented.
-
-(defun fancy-fn-call (xp list)
-  (let ((template (gethash (car list) zwei:*lisp-indentation-offset-hash-table*)))
-    (when (not (consp template))
-      (setq template
-	    (if (string-equal (car list) "def" :end1 3 :end2 3)
-		zwei:*lisp-defun-indentation*)))
-    (if template (print-fancy-fn-call xp list template) (fn-call xp list))))
-
-(set-pprint-dispatch+ '(satisfies function-call-p) #'fancy-fn-call -5 *IPD*)
-
-;inverter for #"..."
-
-(defun formatter-print (xp list)
-  (if (and (consp (cdr list)) (stringp (cadr list)) (null (cddr list))
-	   (eq (get-dispatch-macro-character #\# #\") #'format-string-reader))
-      (funcall (formatter "#~W") xp (cadr list))
-      (xp:pprint-fill xp list)))
-
-(set-pprint-dispatch+ '(cons (member formatter)) #'formatter-print 0 *IPD*)
-
-;This ZL function needs extra help to print right.
-
-(defun do-named-print (xp obj)
-  (funcall (formatter "~:<~W~^ ~:I~@_~W~^ ~_~/xp:bind-list/~^ ~_~
-                       ~:/xp:pprint-linear/~^~1I~@{~_~W~^~}~:>") xp obj))
-
-(set-pprint-dispatch+ '(cons (member zl:do-named)) #'do-named-print 0 *IPD*)
-
-;;; This is a revamped trace printing function utilizing xp to the full.
-;;; because of the weak way XP supports mousability at the moment,
-;;; we cannot get the args on one line when they will fit yet.
-
-(defconstant trace-leader "|   |   |   |   |   |   |   |   |   |   |   |   | ")
-
-(defvar *trace-print-lines* 1 "controles *print-lines* when trace prints")
-
-(defun trace-print (depth direction function print-args-flag extras-1 extras-2)
-  (declare (special si:arglist si:values))
-  (let ((ind (min 50 (* 2 (1- si:trace-level))))
-	(args (and (eq direction 'si:enter) print-args-flag si:arglist))
-	(vals (and print-args-flag si:values))
-	(*print-lines* *trace-print-lines*))
-    (flet ((trace-line (control-string &rest args)
-	     (terpri si:trace-output)
-	     (write-string trace-leader si:trace-output :end ind)
-	     (apply #'format si:trace-output control-string args)))
-      (trace-line "~D ~A ~S " depth direction function)
-      (if (and args (null (cdr args))) (prin1 (car args) si:trace-output)
-	  (dolist (a args) (trace-line "  ~S" a)))
-      (if (and vals (null (cdr vals))) (prin1 (car vals) si:trace-output)
-	  (dolist (v vals) (trace-line "  ~S" v)))
-      (dolist (e extras-1) (trace-line "  \\\\ ~S" (eval e)))
-      (dolist (e extras-2) (trace-line "  // ~S" (eval e))))))
-
-(defun pp (&optional (object nil objectp) (stream *standard-output*))
-  (let ((*print-pretty* T)
-	(*print-lines* nil)
-	(*print-length* nil)
-	(*print-level* nil))
-    (cl:fresh-line stream)
-    (if objectp (write object :stream stream)
-	(funcall *last-abbreviated-printing* stream))
-    (values)))
-)
 
 ;so only happens first time is loaded.
 (when (eq *print-pprint-dispatch* T)
@@ -3202,23 +3003,12 @@ dw::
       (set-dispatch-macro-character #\# #\" #'format-string-reader))
     (when (not (eq package (find-package "XP")))
       (use-package "XP" package)
-      (when shadow (shadowing-import *xp-printing-functions* package)))
-  #+symbolics
-    (progn
-      (when (null original-trace-print)
-	(setq original-trace-print (symbol-function 'si:trace-print)))
-      (setf (symbol-function 'si:trace-print) (symbol-function 'trace-print))
-      (zl:setq-standard-value scl:*print-pretty-printer* 'pretty-printer)))
+      (when shadow (shadowing-import *xp-printing-functions* package))))
   (when (and remove (member (find-package "XP") (package-use-list package)))
     (unuse-package "XP" package)
     (dolist (sym (intersection *xp-printing-functions*
 			       (package-shadowing-symbols package)))
-      (unintern sym package))
-  #+symbolics
-    (progn
-      (when original-trace-print
-	(setf (symbol-function 'si:trace-print) original-trace-print))
-      (zl:setq-standard-value scl:*print-pretty-printer* 'gprint:print-object)))
+      (unintern sym package)))
   T)
 
 ;changes since last documentation.
