@@ -1091,10 +1091,86 @@
     (null *standard-output*)
     (stream stream)))
 
+(defun write+ (object xp)
+  (let ((*parents* *parents*))
+    (unless (and *circularity-hash-table*
+		(eq (circularity-process xp object nil) :subsequent))
+      (when (and *circularity-hash-table* (consp object))
+	;;avoid possible double check in handle-logical-block.
+	(setq object (cons (car object) (cdr object))))
+      (let ((printer (if *print-pretty* (get-printer object *print-pprint-dispatch*) nil))
+	    type)
+	(cond (printer (funcall printer xp object))
+	      ((maybe-print-fast xp object))
+	      ((and *print-pretty*
+		    (symbolp (setq type (type-of object)))
+		    (setq printer (get type 'structure-printer))
+		    (not (eq printer :none)))
+	       (funcall printer xp object))
+	      ((and *print-pretty* *print-array* (arrayp object)
+		    (not (stringp object)) (not (bit-vector-p object))
+		    (not (structure-type-p (type-of object))))
+	       (pretty-array xp object))
+	      (T (let ((stuff
+			 (with-output-to-string (s)
+			   (non-pretty-print object s))))
+		   (write-string+ stuff xp 0 (length stuff)))))))))
+
+(declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
+(defun do-xp-printing (fn stream args)
+  (let ((xp (get-pretty-print-stream stream))
+	(*current-level* 0)
+	(result nil))
+    (catch 'line-limit-abbreviation-exit
+      (start-block xp nil nil nil)
+      (setq result (apply fn xp args))
+      (end-block xp nil))
+    (when (and *locating-circularities*
+	       (zerop *locating-circularities*)	;No circularities.
+	       (= (line-no xp) 1)	     	;Didn't suppress line.
+	       (zerop (buffer-offset xp)))	;Didn't suppress partial line.
+      (setq *locating-circularities* nil))	;print what you have got.
+    (when (catch 'line-limit-abbreviation-exit
+	    (attempt-to-output xp nil T) nil)
+      (attempt-to-output xp T T))
+    (free-pretty-print-stream xp)
+    result))
+
+(defun xp-print (fn stream args)
+  (setq *result* (do-xp-printing fn stream args))
+  (when *locating-circularities*
+    (setq *locating-circularities* nil)
+    (setq *abbreviation-happened* nil)
+    (setq *parents* nil)
+    (setq *result* (do-xp-printing fn stream args))))
+
+(declaim (ftype (function (function stream &rest t) (values t &optional)) call-with-xp-stream))
+(defun call-with-xp-stream (fn stream &rest args)
+  (if (xp-structure-p stream) (apply fn stream args)
+      (let ((*abbreviation-happened* nil)
+	    (*locating-circularities* (if *print-circle* 0 nil))
+	    (*circularity-hash-table*
+	      (if *print-circle* (get-circularity-hash-table) nil))
+	    (*parents* (when (not *print-shared*) (list nil)))
+	    (*result* nil))
+	(xp-print fn (decode-stream-arg stream) args)
+	(if *circularity-hash-table*
+	    (free-circularity-hash-table *circularity-hash-table*))
+	(when *abbreviation-happened*
+	  (setq *last-abbreviated-printing*
+		(eval
+		  `(function
+		     (lambda (&optional (stream ',stream))
+		       (let ((*package* ',*package*))
+			 (apply #'call-with-xp-stream
+				',fn stream
+				',(copy-list args))))))))
+	*result*)))
+
 (declaim (ftype (function (t stream) (values t &optional)) basic-write))
 (defun basic-write (object stream)
   (cond ((xp-structure-p stream) (write+ object stream))
-	(*print-pretty* (maybe-initiate-xp-printing
+	(*print-pretty* (call-with-xp-stream
 			  #'(lambda (s o) (write+ o s)) stream object))
 	(T (cl:write object :stream stream))))
 
@@ -1122,82 +1198,6 @@
 	 (basic-write object stream))
 	(T (apply #'cl:write object pairs)))
   object)
-
-(declaim (ftype (function (function stream &rest t) (values t &optional)) maybe-initiate-xp-printing))
-(defun maybe-initiate-xp-printing (fn stream &rest args)
-  (if (xp-structure-p stream) (apply fn stream args)
-      (let ((*abbreviation-happened* nil)
-	    (*locating-circularities* (if *print-circle* 0 nil))
-	    (*circularity-hash-table*
-	      (if *print-circle* (get-circularity-hash-table) nil))
-	    (*parents* (when (not *print-shared*) (list nil)))
-	    (*result* nil))
-	(xp-print fn (decode-stream-arg stream) args)
-	(if *circularity-hash-table*
-	    (free-circularity-hash-table *circularity-hash-table*))
-	(when *abbreviation-happened*
-	  (setq *last-abbreviated-printing*
-		(eval
-		  `(function
-		     (lambda (&optional (stream ',stream))
-		       (let ((*package* ',*package*))
-			 (apply #'maybe-initiate-xp-printing
-				',fn stream
-				',(copy-list args))))))))
-	*result*)))
-
-(defun xp-print (fn stream args)
-  (setq *result* (do-xp-printing fn stream args))
-  (when *locating-circularities*
-    (setq *locating-circularities* nil)
-    (setq *abbreviation-happened* nil)
-    (setq *parents* nil)
-    (setq *result* (do-xp-printing fn stream args))))
-
-(declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
-(defun do-xp-printing (fn stream args)
-  (let ((xp (get-pretty-print-stream stream))
-	(*current-level* 0)
-	(result nil))
-    (catch 'line-limit-abbreviation-exit
-      (start-block xp nil nil nil)
-      (setq result (apply fn xp args))
-      (end-block xp nil))
-    (when (and *locating-circularities*
-	       (zerop *locating-circularities*)	;No circularities.
-	       (= (line-no xp) 1)	     	;Didn't suppress line.
-	       (zerop (buffer-offset xp)))	;Didn't suppress partial line.
-      (setq *locating-circularities* nil))	;print what you have got.
-    (when (catch 'line-limit-abbreviation-exit
-	    (attempt-to-output xp nil T) nil)
-      (attempt-to-output xp T T))
-    (free-pretty-print-stream xp)
-    result))
-
-(defun write+ (object xp)
-  (let ((*parents* *parents*))
-    (unless (and *circularity-hash-table*
-		(eq (circularity-process xp object nil) :subsequent))
-      (when (and *circularity-hash-table* (consp object))
-	;;avoid possible double check in handle-logical-block.
-	(setq object (cons (car object) (cdr object))))
-      (let ((printer (if *print-pretty* (get-printer object *print-pprint-dispatch*) nil))
-	    type)
-	(cond (printer (funcall printer xp object))
-	      ((maybe-print-fast xp object))
-	      ((and *print-pretty*
-		    (symbolp (setq type (type-of object)))
-		    (setq printer (get type 'structure-printer))
-		    (not (eq printer :none)))
-	       (funcall printer xp object))
-	      ((and *print-pretty* *print-array* (arrayp object)
-		    (not (stringp object)) (not (bit-vector-p object))
-		    (not (structure-type-p (type-of object))))
-	       (pretty-array xp object))
-	      (T (let ((stuff
-			 (with-output-to-string (s)
-			   (non-pretty-print object s))))
-		   (write-string+ stuff xp 0 (length stuff)))))))))
 
 (defun non-pretty-print (object s)
   (cl:write object
@@ -1557,7 +1557,7 @@
     (warn "prefix ~S and per-line-prefix ~S cannot both be specified ~
            in PPRINT-LOGICAL-BLOCK" prefix per-line-prefix)
     (setq per-line-prefix nil))
-  `(maybe-initiate-xp-printing
+  `(call-with-xp-stream
      #'(lambda (,stream-symbol)
 	 (let ((+l ,list)
 	       (+p ,(or prefix per-line-prefix ""))
@@ -1778,7 +1778,7 @@
 (declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
 (defun formatter-fn (*string* *default-package*)
   (or (catch :format-compilation-error
-	`(apply (function maybe-initiate-xp-printing)
+	`(apply (function call-with-xp-stream)
 	        (function
 		 (lambda (xp &rest args)
 		  ,@(bind-initial
