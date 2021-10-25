@@ -111,22 +111,10 @@
 
 ;default (bad) definitions for the non-portable functions
 
-#-(or :franz-inc :cmu)(eval-when (:execute :load-toplevel :compile-toplevel)
+#-(or :franz-inc)(eval-when (:execute :load-toplevel :compile-toplevel)
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
 (defun output-position  (&optional (s *standard-output*)) (declare (ignore s)) nil) )
-
-
-
-
-;XP is being included in CMU's Common Lisp.
-;The prime contact there is Bill Chiles "chiles@cs.cmu.edu"
-;and/or Blain Burks "mbb@cs.cmu.edu".
-
-#+:cmu(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun structure-type-p (x) (and (symbolp x) (get x 'lisp::%structure-definition)))
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
-(defun output-position  (&optional (s *standard-output*)) (lisp::charpos s)) )
 
 
 ;Definitions for FRANZ Common Lisp. (Only verified for the version 1.3
@@ -211,7 +199,7 @@
 		set-pprint-dispatch))
 (defun set-pprint-dispatch (type-specifier function
 			    &optional (priority 0) (table *print-pprint-dispatch*))
-  #-sbcl
+  #-(or sbcl cmu)
   (when (or (not (numberp priority)) (complexp priority))
     (error "invalid PRIORITY argument ~A to SET-PPRINT-DISPATCH" priority))
   (set-pprint-dispatch+ type-specifier function priority table))
@@ -1412,6 +1400,7 @@
 	       (setf (gethash string-or-fn *format-string-cache*) value))
 	     value))))
 
+(defmethod trivial-gray-streams:stream-line-column ((output xp-structure)) nil)
 (defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
   (write-char+ char output)
   char)
