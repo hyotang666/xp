@@ -151,10 +151,11 @@
 
 ;If you call this, then the table gets efficiently recycled.
 
-(declaim (ftype (function (hash-table) (values list &optional)) free-circularity-hash-table))
+(declaim (ftype (function (hash-table) (values &optional)) free-circularity-hash-table))
 (defun free-circularity-hash-table (table)
   (clrhash table)
-  (pushnew table *free-circularity-hash-tables*))
+  (pushnew table *free-circularity-hash-tables*)
+  (values))
 
 ;                       ---- DISPATCHING ----
 
