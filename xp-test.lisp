@@ -118,10 +118,13 @@
 	       (error (c) (constantly c)))
 	     form)))
 
-(defun deftest (form) (eval form))
+(defun deftest (form)
+  (uiop:with-muffled-conditions (uiop:*usual-uninteresting-conditions*)
+    (eval form)))
 
 (defun test-def (form)
-  (eval (car form))
+  (uiop:with-muffled-conditions (uiop:*usual-uninteresting-conditions*)
+    (eval (car form)))
 #+symbolics(compile (cadar form)) ;does not work in all lisps
   (test-ordinary (cadr form)))
 
