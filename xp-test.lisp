@@ -113,7 +113,10 @@
 
 (defun test-ordinary (form)
   (setq form `(lambda () ,form))
-  (funcall (if compile-tests (compile nil form) form)))
+  (funcall (if compile-tests
+	     (handler-case (compile nil form)
+	       (error (c) (constantly c)))
+	     form)))
 
 (defun deftest (form) (eval form))
 
