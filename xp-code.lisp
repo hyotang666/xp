@@ -1080,6 +1080,17 @@
 ;they do not need error checking of fancy stream coercion.  The '++' forms
 ;additionally assume the thing being output does not contain a newline.
 
+(deftype stream-designator ()
+  '(or boolean stream))
+
+(declaim (ftype (function (stream-designator) (values stream &optional)) decode-stream-arg))
+(defun decode-stream-arg (stream)
+  "Decode stream-designator to apropreate stream."
+  (etypecase stream
+    ((eql t) *terminal-io*)
+    (null *standard-output*)
+    (stream stream)))
+
 (defun write (object &rest pairs &key (stream *standard-output*)
 	      (escape *print-escape*) (radix *print-radix*)
 	      (base *print-base*) (circle *print-circle*)
@@ -1141,12 +1152,6 @@
     (setq *abbreviation-happened* nil)
     (setq *parents* nil)
     (setq *result* (do-xp-printing fn stream args))))
-
-(declaim (ftype (function ((or boolean stream)) (values stream &optional)) decode-stream-arg))
-(defun decode-stream-arg (stream)
-  (cond ((eq stream T) *terminal-io*)
-	((null stream) *standard-output*)
-	(T stream)))
 
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
