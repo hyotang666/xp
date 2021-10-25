@@ -1080,6 +1080,73 @@
 ;they do not need error checking of fancy stream coercion.  The '++' forms
 ;additionally assume the thing being output does not contain a newline.
 
+;;; Circularity process
+
+;;; It is vital that this function be called EXACTLY once for each occurrence of
+;;;   each thing in something being printed.
+;;; Returns nil if printing should just continue on.
+;;;   Either it is not a duplicate, or we are in the first pass and do not know.
+;;; returns :FIRST if object is first occurrence of a DUPLICATE.
+;;;   (This can only be returned on a second pass.)
+;;;   After an initial code (printed by this routine on the second pass)
+;;;   printing should continue on for the object.
+;;; returns :SUBSEQUENT if second or later occurrence.
+;;;   Printing is all taken care of by this routine.
+
+;;; Note many (maybe most) lisp implementations have characters and small numbers
+;;; represented in a single word so that the are always eq when they are equal and the
+;;; reader takes care of properly sharing them (just as it does with symbols).
+;;; Therefore, we do not want circularity processing applied to them.  However,
+;;; some kinds of numbers (e.g., bignums) undoubtedly are complex structures that
+;;; the reader does not share.  However, they cannot have circular pointers in them
+;;; and it is therefore probably a waste to do circularity checking on them.  In
+;;; any case, it is not clear that it easy to tell exactly what kinds of numbers a
+;;; given implementation of CL is going to have the reader automatically share.
+
+(declaim (ftype (function (xp-structure t boolean)
+			  (values (member nil :subsequent :first) &optional))
+		circularity-process))
+(defun circularity-process (xp object interior-cdr?)
+  "Determine circularity process type.
+  Returns
+  NIL - Printing should just continue on.
+  :FIRST - Object is first occurrence of a DUPLICATE.
+  :SUBSEQUENT - Second or later occurrence."
+  (unless (or (numberp object)
+	      (characterp object)
+	      (and (symbolp object)	;Reader takes care of sharing.
+		   (or (null *print-gensym*) (symbol-package object))))
+    (let ((id (gethash object *circularity-hash-table*)))
+      (if *locating-circularities*
+	  (cond ((null id)	;never seen before
+		 (when *parents* (push object *parents*))
+		 (setf (gethash object *circularity-hash-table*) 0)
+		 nil)
+		((zerop id) ;possible second occurrence
+		 (cond ((or (null *parents*) (member object *parents*))
+			(setf (gethash object *circularity-hash-table*)
+			      (incf *locating-circularities*))
+			:subsequent)
+		       (T nil)))
+		(T :subsequent));third or later occurrence
+	  (cond ((or (null id)	;never seen before (note ~@* etc. conses)
+		     (zerop id));no duplicates
+		 nil)
+		((plusp id)
+		 (cond (interior-cdr?
+			(decf *current-level*)
+			(write-string++ ". #" xp 0 3))
+		       (T (write-char++ #\# xp)))
+		 (print-fixnum xp id)
+		 (write-char++ #\= xp)
+		 (setf (gethash object *circularity-hash-table*) (- id))
+		 :first)
+		(T (if interior-cdr? (write-string++ ". #" xp 0 3)
+		       (write-char++ #\# xp))
+		   (print-fixnum xp (- id))
+		   (write-char++ #\# xp)
+		   :subsequent))))))
+
 (deftype stream-designator ()
   '(or boolean stream))
 
@@ -1205,66 +1272,6 @@
 			 (- *print-level* *current-level*))
 	      :pretty nil
 	      :stream s))
-
-;It is vital that this function be called EXACTLY once for each occurrence of
-;  each thing in something being printed.
-;Returns nil if printing should just continue on.
-;  Either it is not a duplicate, or we are in the first pass and do not know.
-;returns :FIRST if object is first occurrence of a DUPLICATE.
-;  (This can only be returned on a second pass.)
-;  After an initial code (printed by this routine on the second pass)
-;  printing should continue on for the object.
-;returns :SUBSEQUENT if second or later occurrence.
-;  Printing is all taken care of by this routine.
-
-;Note many (maybe most) lisp implementations have characters and small numbers
-;represented in a single word so that the are always eq when they are equal and the
-;reader takes care of properly sharing them (just as it does with symbols).
-;Therefore, we do not want circularity processing applied to them.  However,
-;some kinds of numbers (e.g., bignums) undoubtedly are complex structures that
-;the reader does not share.  However, they cannot have circular pointers in them
-;and it is therefore probably a waste to do circularity checking on them.  In
-;any case, it is not clear that it easy to tell exactly what kinds of numbers a
-;given implementation of CL is going to have the reader automatically share.
-
-(declaim (ftype (function (xp-structure t boolean)
-			  (values (member nil :subsequent :first) &optional))
-		circularity-process))
-(defun circularity-process (xp object interior-cdr?)
-  (unless (or (numberp object)
-	      (characterp object)
-	      (and (symbolp object)	;Reader takes care of sharing.
-		   (or (null *print-gensym*) (symbol-package object))))
-    (let ((id (gethash object *circularity-hash-table*)))
-      (if *locating-circularities*
-	  (cond ((null id)	;never seen before
-		 (when *parents* (push object *parents*))
-		 (setf (gethash object *circularity-hash-table*) 0)
-		 nil)
-		((zerop id) ;possible second occurrence
-		 (cond ((or (null *parents*) (member object *parents*))
-			(setf (gethash object *circularity-hash-table*)
-			      (incf *locating-circularities*))
-			:subsequent)
-		       (T nil)))
-		(T :subsequent));third or later occurrence
-	  (cond ((or (null id)	;never seen before (note ~@* etc. conses)
-		     (zerop id));no duplicates
-		 nil)
-		((plusp id)
-		 (cond (interior-cdr?
-			(decf *current-level*)
-			(write-string++ ". #" xp 0 3))
-		       (T (write-char++ #\# xp)))
-		 (print-fixnum xp id)
-		 (write-char++ #\= xp)
-		 (setf (gethash object *circularity-hash-table*) (- id))
-		 :first)
-		(T (if interior-cdr? (write-string++ ". #" xp 0 3)
-		       (write-char++ #\# xp))
-		   (print-fixnum xp (- id))
-		   (write-char++ #\# xp)
-		   :subsequent))))))
 
 ;This prints a few very common, simple atoms very fast.
 ;Pragmatically, this turns out to be an enormous savings over going to the
