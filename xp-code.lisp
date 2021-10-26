@@ -2797,17 +2797,21 @@
 ;both print out as `'(a .,b), because the backquote reader produces the
 ;same code in both cases.
 
-(defvar *bq-list*)
-(defvar *bq-list**)
-(defvar *bq-cons*)
-(defvar *bq-append*)
-(defvar *bq-nconc*)
+;; NOTE [by SATO Shinichi]
+;; ".,hoge" is not familier in 2021, so now xp generates ",@hoge" notation.
+;; Some coner case tests may needed.
+
+(defvar *bq-list* #+cmu 'lisp::backq-list)
+(defvar *bq-list** #+cmu 'lisp::backq-list*)
+(defvar *bq-cons* #+cmu 'lisp::backq-cons)
+(defvar *bq-append* #+cmu 'lisp::backq-append)
+(defvar *bq-nconc* #+cmu 'lisp::backq-nconc)
 
 (defun bq-print (xp obj)
   (funcall (formatter "`~W") xp (bqtify obj)))
 
-(defvar *bq-vector*)
-(defvar *bq-list-to-vector*) ;turned off
+(defvar *bq-vector* #+cmu 'lisp::backq-vector)
+(defvar *bq-list-to-vector* #+cmu '#:no-such) ;turned off
 
 (defun bq-vector-print (xp obj)
   (funcall (xp:formatter "`#~W") xp (car (bqtify obj))))
@@ -2857,7 +2861,7 @@
   (cond ((atom (cdr loc))
 	 (let ((tem (bqtify (car loc))))
 	   (cond ((and (bq-struct-p tem) (equal (bq-struct-code tem) ","))
-		  (list (make-bq-struct :code ".," :data (car loc))))
+		  (list (make-bq-struct :code ",@" :data (car loc))))
 		 (t tem))))
 	((and (listp (car loc))
 	      (eq (caar loc) 'quote)
@@ -2905,6 +2909,17 @@
     (set-pprint-dispatch+ '(cons (member si:unquote)) (printer ",") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member si:unquote-nsplice)) (printer ",.") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member si:unquote-splice)) (printer ",@") 0 *IPD*)))
+
+#+(or :cmu)(eval-when (:load-toplevel :execute)
+(set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-cons*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-list*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-list**)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-append*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-nconc*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-vector*)) #'bq-vector-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,*bq-list-to-vector*)) #'bq-vector-print 0 *IPD*)
+) ; Eval-when.
 
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)

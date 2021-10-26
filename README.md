@@ -36,8 +36,8 @@ Such bugs do not break read/print identity.
 * [ ] Passing the test.
 
 ### CMUCL
-* [ ] Loadable.
-* [ ] Testable.
+* [x] Loadable.
+* [x] Testable.
 * [ ] Fixing critical bugs.
 * [ ] Passing the test.
 
