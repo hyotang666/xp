@@ -1815,6 +1815,7 @@
 
 ;; MEMO: Should be change to CONDITION system?
 (declaim (ftype (function ((integer 0 *) string (integer 0 *))
+			  #-ccl
 			  (values nil &optional))
 		err))
 (defun err (id msg i)
