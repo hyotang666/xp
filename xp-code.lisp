@@ -1217,13 +1217,11 @@
 	    (free-circularity-hash-table *circularity-hash-table*))
 	(when *abbreviation-happened*
 	  (setq *last-abbreviated-printing*
-		(eval
-		  `(function
-		     (lambda (&optional (stream ',stream))
-		       (let ((*package* ',*package*))
-			 (apply #'call-with-xp-stream
-				',fn stream
-				',(copy-list args))))))))
+		(let ((list (copy-list args)))
+		  (lambda (&optional (stream stream))
+		    (let ((*package* *package*))
+		      (apply #'call-with-xp-stream
+			     fn stream list))))))
 	*result*)))
 
 (declaim (ftype (function (t stream) (values t &optional)) basic-write))
