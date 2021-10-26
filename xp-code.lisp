@@ -54,7 +54,7 @@
 
 (defpackage :xp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
-	   prin1-to-string write-line write-string write-char terpri fresh-line
+	   prin1-to-string write-line write-string terpri fresh-line
 	   defstruct finish-output force-output clear-output)
   (:shadow formatter copy-pprint-dispatch pprint-dispatch
 	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
@@ -77,7 +77,7 @@
 
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
-	  prin1-to-string write-line write-string write-char terpri fresh-line
+	  prin1-to-string write-line write-string terpri fresh-line
 	  defstruct finish-output force-output clear-output)
   "printing functions redefined by xp.")
 
@@ -1416,13 +1416,6 @@
 (defmethod trivial-gray-streams:stream-line-column ((output xp-structure)) nil)
 (defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
   (write-char+ char output)
-  char)
-
-(defun write-char (char &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (if (xp-structure-p stream)
-      (write-char+ char stream)
-      (cl:write-char char stream))
   char)
 
 (locally
