@@ -2877,7 +2877,6 @@
            (declare (ignore noise))
 	   (funcall (formatter "`~W")
 		    output (cadr backquote))))
-    (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member sb-int:quasiquote)) #'print-backquote 0 *IPD*)
     (set-pprint-dispatch+ 'sb-impl::comma #'print-comma 0 *IPD*)))
 
