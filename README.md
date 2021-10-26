@@ -17,6 +17,13 @@ Such bugs do not break read/print identity.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
 
+* Issue: CCL is seemed to be not able to print list `(function foo)`.
+
+```lisp
+(cl:write '(function foo) :pretty t) => #'FOO
+(cl:write '(function foo) :pretty nil) => #'FOO
+```
+
 ### CLISP
 * [x] Loadable.
 * [x] Testable.
