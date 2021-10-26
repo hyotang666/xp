@@ -477,14 +477,12 @@
 
 (defmacro section-start (xp) `(aref (block-stack ,xp) (block-stack-ptr ,xp)))
 
-(declaim (ftype (function (xp-structure) (values (or null
-						     array ; FIXME(?) Is this needed?
-						     )
-						 &optional))
-		push-block-strack))
+(declaim (ftype (function (xp-structure) (values &optional))
+		push-block-stack))
 (defun push-block-stack (xp)
   (incf (block-stack-ptr xp) #.block-stack-entry-size)
-  (check-size xp block-stack (block-stack-ptr xp)))
+  (check-size xp block-stack (block-stack-ptr xp))
+  (values))
 
 (declaim (ftype (function (xp-structure) (values (mod #.array-total-size-limit) &optional))
 		pop-block-stack))
