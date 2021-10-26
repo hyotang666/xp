@@ -312,10 +312,8 @@
 	 (fn (get-printer object table)))
     (values (or fn #'non-pretty-print) (not (null fn)))))
 
-(declaim (ftype (function (t entry) (values t ; FIXME(?) to return BOOLEAN.
-					    &optional))
-		fits))
-(defun fits (obj entry) (funcall (test entry) obj))
+(declaim (ftype (function (t entry) (values boolean &optional)) fits))
+(defun fits (obj entry) (and (funcall (test entry) obj) t))
 
 (defvar *preds-for-specs*
   '((T always-true) (cons consp) (simple-atom simple-atom-p) (other otherp)
