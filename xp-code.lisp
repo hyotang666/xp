@@ -2059,7 +2059,7 @@
 	  `(funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ params)
 	  (let ((vars (mapcar #'(lambda (arg)
 				  (declare (ignore arg))
-				  (gentemp))
+				  (gentemp)) ; FIXME: gentemp is obsoleted.
 			      params)))
 	    `(let ,(mapcar #'list vars params)
 	       (funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ vars)))))))
@@ -2883,6 +2883,17 @@
     (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member sb-int:quasiquote)) #'print-backquote 0 *IPD*)
     (set-pprint-dispatch+ 'sb-impl::comma #'print-comma 0 *IPD*)))
+
+#+clisp
+(eval-when (:load-toplevel :execute)
+  (flet ((printer (prefix)
+           (lambda (output exp &rest noise)
+	     (declare (ignore noise))
+	     (format output "~A~W" prefix (cadr exp)))))
+    (set-pprint-dispatch+ '(cons (member system::backquote)) (printer "`") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member system::unquote)) (printer ",") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member system::nsplice)) (printer ",.") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member system::splice)) (printer ",@") 0 *IPD*)))
 
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)

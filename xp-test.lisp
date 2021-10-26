@@ -2344,7 +2344,8 @@ B")
 #+(or :lucid symbolics)
   ((ftest 55 0 '``(,,X)) "``(,,X)")
 
-  ((ftest 55 0 '`(,a ,b ,c) (*print-circle* t) (*print-shared* t)) "`(,A ,B ,C)")
+  ;; Failed. (685) in ccl, clisp. (fare-quasiquote is needed?.)
+  ((ftest 55 0 '`(,a ,.b ,@c) (*print-circle* t) (*print-shared* t)) "`(,A ,.B ,@C)")
 
 ;tests of things that only work on Symbolics machines.
 

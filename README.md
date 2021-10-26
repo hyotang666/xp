@@ -18,9 +18,9 @@ Such bugs do not break read/print identity.
 * [ ] Passing the test.
 
 ### CLISP
-* [ ] Loadable.
-* [ ] Testable.
-* [ ] Fixing critical bugs.
+* [x] Loadable.
+* [x] Testable.
+* [x] Fixing critical bugs.
 * [ ] Passing the test.
 
 ### ECL
