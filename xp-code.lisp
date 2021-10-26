@@ -54,7 +54,7 @@
 
 (defpackage :xp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
-	   prin1-to-string write-line write-string terpri fresh-line
+	   prin1-to-string write-line write-string fresh-line
 	   defstruct finish-output force-output clear-output)
   (:shadow formatter copy-pprint-dispatch pprint-dispatch
 	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
@@ -77,7 +77,7 @@
 
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
-	  prin1-to-string write-line write-string terpri fresh-line
+	  prin1-to-string write-line write-string fresh-line
 	  defstruct finish-output force-output clear-output)
   "printing functions redefined by xp.")
 
@@ -1429,13 +1429,6 @@
 	     (pprint-newline+ :unconditional stream))
       (cl:write-line string stream :start start :end end))
   string) )
-
-(defun terpri (&optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (if (xp-structure-p stream)
-      (pprint-newline+ :unconditional stream)
-      (cl:terpri stream))
-  nil)
 
 ;This has to violate the XP data abstraction and fool with internal
 ;stuff, in order to find out the right info to return as the result.
