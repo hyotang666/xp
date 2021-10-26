@@ -55,7 +55,7 @@
 (defpackage :xp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
 	   prin1-to-string write-line write-string
-	   defstruct clear-output)
+	   defstruct)
   (:shadow formatter copy-pprint-dispatch pprint-dispatch
 	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
 	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
@@ -78,7 +78,7 @@
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
 	  prin1-to-string write-line write-string
-	  defstruct clear-output)
+	  defstruct)
   "printing functions redefined by xp.")
 
 ;must do the following in common lisps not supporting *print-shared*
@@ -1452,13 +1452,9 @@
   (attempt-to-output output T T)
   nil)
 
-(defun clear-output (&optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (when (xp-structure-p stream)
-    (let ((*locating-circularities* 0)) ;hack to prevent visible output
-      (attempt-to-output stream T T)
-      (setq stream (base-stream stream))))
-  (cl:clear-output stream)
+(defmethod trivial-gray-streams:stream-clear-output ((output xp-structure))
+  (let ((*locating-circularities* 0)) ;hack to prevent visible output
+    (attempt-to-output output T T))
   nil)
 
 ;note we are assuming that if a structure is defined using xp::defstruct,
