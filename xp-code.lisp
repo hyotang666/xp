@@ -886,7 +886,10 @@
 	  (pprint-newline+ :unconditional xp)
 	  (setq start (1+ sub-end)))))
 
-(declaim (ftype (function ((member :section :line-relative :section-relative :line)
+(deftype tab-kind ()
+  '(member :section :line-relative :section-relative :line))
+
+(declaim (ftype (function (tab-kind
 			   (integer 0 *)
 			   (integer 0 *)
 			   xp-structure)
@@ -1558,24 +1561,21 @@
 
 (defun pprint-newline (kind &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
-  (when (not (member kind '(:linear :miser :fill :mandatory)))
-    (error "Invalid KIND argument ~A to PPRINT-NEWLINE" kind))
+  (check-type kind newline-kind)
   (when (xp-structure-p stream)
     (pprint-newline+ kind stream))
   nil)
 
 (defun pprint-indent (relative-to n &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
-  (when (not (member relative-to '(:block :current)))
-    (error "Invalid KIND argument ~A to PPRINT-INDENT" relative-to))
+  (check-type relative-to indent-kind)
   (when (xp-structure-p stream)
     (pprint-indent+ relative-to n stream))
   nil)
 
 (defun pprint-tab (kind colnum colinc &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
-  (when (not (member kind '(:line :section :line-relative :section-relative)))
-    (error "Invalid KIND argument ~A to PPRINT-TAB" kind))
+  (check-type kind tab-kind)
   (when (xp-structure-p stream)
     (pprint-tab+ kind colnum colinc stream))
   nil)
