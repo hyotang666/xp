@@ -484,10 +484,11 @@
   (check-size xp block-stack (block-stack-ptr xp))
   (values))
 
-(declaim (ftype (function (xp-structure) (values (mod #.array-total-size-limit) &optional))
+(declaim (ftype (function (xp-structure) (values &optional))
 		pop-block-stack))
 (defun pop-block-stack (xp)
-  (decf (block-stack-ptr xp) #.block-stack-entry-size))
+  (decf (block-stack-ptr xp) #.block-stack-entry-size)
+  (values))
 
 (defmacro prefix-ptr (xp)
   `(aref (prefix-stack ,xp) (prefix-stack-ptr ,xp)))
