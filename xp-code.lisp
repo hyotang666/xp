@@ -324,7 +324,7 @@
     (vector vectorp) (simple-vector simple-vector-p)
     (simple-string simple-string-p) (simple-bit-vector simple-bit-vector-p)
     (array arrayp) (package packagep) (function functionp)
-    (compiled-function compiled-function-p) (common commonp)))
+    (compiled-function compiled-function-p)))
 
 (declaim (ftype (function (t) (values (eql t) &optional))
 		always-true))
