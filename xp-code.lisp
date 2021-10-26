@@ -274,14 +274,6 @@
 		   (incf (test value) delta)))
 	   (structures table)))
 
-(declaim (ftype (function (t &optional (or null pprint-dispatch))
-			  (values (or symbol function) boolean &optional))
-		pprint-dispatch))
-(defun pprint-dispatch (object &optional (table *print-pprint-dispatch*))
-  (let* ((table (or table *IPD*))
-	 (fn (get-printer object table)))
-    (values (or fn #'non-pretty-print) (not (null fn)))))
-
 (declaim (ftype (function (t pprint-dispatch) (values (or null (or symbol function)) &optional))
 		get-printer))
 (defun get-printer (object table)
@@ -295,6 +287,14 @@
 	    ((zerop i))
 	  (when (fits object (car l)) (setq entry (car l)) (return nil))))
     (when entry (fn entry))))
+
+(declaim (ftype (function (t &optional (or null pprint-dispatch))
+			  (values (or symbol function) boolean &optional))
+		pprint-dispatch))
+(defun pprint-dispatch (object &optional (table *print-pprint-dispatch*))
+  (let* ((table (or table *IPD*))
+	 (fn (get-printer object table)))
+    (values (or fn #'non-pretty-print) (not (null fn)))))
 
 (declaim (ftype (function (t entry) (values t ; FIXME(?) to return BOOLEAN.
 					    &optional))
@@ -741,12 +741,141 @@
 ;error checking has to be done.  Suffix ++ additionally means that the
 ;output is guaranteed not to contain a newline char.
 
+
+(declaim (ftype (function (xp-structure Qindex) (values &optional)) set-indentation-prefix))
+(defun set-indentation-prefix (xp new-position)
+  (let ((new-ind (max (non-blank-prefix-ptr xp) new-position)))
+    (setf (prefix-ptr xp) (initial-prefix-ptr xp))
+    (check-size xp prefix new-ind)
+    (when (> new-ind (prefix-ptr xp))
+      (fill (prefix xp) #\space :start (prefix-ptr xp) :end new-ind))
+    (setf (prefix-ptr xp) new-ind))
+  (values))
+
+;;;  The next function scans the queue looking for things it can do.
+;;; it keeps outputting things until the queue is empty, or it finds
+;;; a place where it cannot make a decision yet.
+
+(defmacro maybe-too-large (xp Qentry)
+  `(let ((limit (linel ,xp)))
+     (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
+       (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
+       (when (not (minusp (prefix-stack-ptr ,xp)))
+	 (decf limit (suffix-ptr ,xp))))
+     (cond ((Qend ,xp ,Qentry)
+	    (> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
+	   ((or force-newlines? (> (LP<-BP ,xp) limit)) T)
+	   (T (return nil)))))	;wait until later to decide.
+
+(defmacro misering? (xp)
+  `(and *print-miser-width*
+	(<= (- (linel ,xp) (initial-prefix-ptr ,xp)) *print-miser-width*)))
+
+;;; If flush-out? is T and force-newlines? is NIL then the buffer,
+;;; prefix-stack, and queue will be in an inconsistent state after the call.
+;;; You better not call it this way except as the last act of outputting.
+
+(declaim (ftype (function (xp-structure boolean boolean)
+			  (values &optional))
+		attempt-to-output))
+(defun attempt-to-output (xp force-newlines? flush-out?)
+  (do () ((> (Qleft xp) (Qright xp))
+	  (setf (Qleft xp) 0)
+	  (setf (Qright xp) #.(- queue-entry-size))) ;saves shifting
+    (case (Qtype xp (Qleft xp))
+      (:ind
+       (unless (misering? xp)
+	 (set-indentation-prefix xp
+	   (case (Qkind xp (Qleft xp))
+	     (:block (+ (initial-prefix-ptr xp) (Qarg xp (Qleft xp))))
+	     (T ; :current
+	       (+ (LP<-TP xp (Qpos xp (Qleft xp)))
+		  (Qarg xp (Qleft xp)))))))
+       (setf (Qleft xp) (Qnext (Qleft xp))))
+      (:start-block
+       (cond ((maybe-too-large xp (Qleft xp))
+	      (push-prefix-stack xp)
+	      (setf (initial-prefix-ptr xp) (prefix-ptr xp))
+	      (set-indentation-prefix xp (LP<-TP xp (Qpos xp (Qleft xp))))
+	      (let ((arg (Qarg xp (Qleft xp))))
+		(when (consp arg) (set-prefix xp (cdr arg)))
+		(setf (initial-prefix-ptr xp) (prefix-ptr xp))
+		(cond ((not (listp arg)) (set-suffix xp arg))
+		      ((car arg) (set-suffix xp (car arg)))))
+	      (setf (section-start-line xp) (line-no xp)))
+	     (T (incf (Qleft xp) (Qoffset xp (Qleft xp)))))
+       (setf (Qleft xp) (Qnext (Qleft xp))))
+      (:end-block (pop-prefix-stack xp) (setf (Qleft xp) (Qnext (Qleft xp))))
+      (T ; :newline
+       (when (case (Qkind xp (Qleft xp))
+	       (:fresh (not (zerop (LP<-BP xp))))
+	       (:miser (misering? xp))
+	       (:fill (or (misering? xp)
+			  (> (line-no xp) (section-start-line xp))
+			  (maybe-too-large xp (Qleft xp))))
+	       (T T)) ;(:linear :unconditional :mandatory)
+	 (output-line xp (Qleft xp))
+	 (setup-for-next-line xp (Qleft xp)))
+       (setf (Qleft xp) (Qnext (Qleft xp))))))
+  (when flush-out? (flush xp))
+  (values))
+
+(declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
+(defun force-some-output (xp)
+  (attempt-to-output xp nil nil)
+  (when (> (buffer-ptr xp) (linel xp)) ;only if printing off end of line
+    (attempt-to-output xp T T))
+  (values))
+
+(declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
+;note this checks (> BUFFER-PTR LINEL) instead of (> (LP<-BP) LINEL)
+;this is important so that when things are longer than a line they
+;end up getting printed in chunks of size LINEL.
+(defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
+  (when (> (buffer-ptr xp) (linel xp))
+    (force-some-output xp))
+  (let ((new-buffer-end (1+ (buffer-ptr xp))))
+    (check-size xp buffer new-buffer-end)
+    (if (char-mode xp) (setq char (handle-char-mode xp char)))
+    (setf (char (buffer xp) (buffer-ptr xp)) char)
+    (setf (buffer-ptr xp) new-buffer-end))
+  (values))
+
 (declaim (ftype (function (character xp-structure) (values &optional))
 		write-char+))
 (defun write-char+ (char xp)
   (if (eql char #\newline) (pprint-newline+ :unconditional xp)
       (write-char++ char xp))
   (values))
+
+(declaim (ftype (function (string xp-structure
+				  (mod #.array-total-size-limit)
+				  (mod #.array-total-size-limit))
+			  (values &optional))
+		write-string+++))
+; never forces output; therefore safe to call from within output-line.
+(defun write-string+++ (string xp start end)
+  (let ((new-buffer-end (+ (buffer-ptr xp) (- end start))))
+    (check-size xp buffer new-buffer-end)
+    (do ((buffer (buffer xp))
+	 (i (buffer-ptr xp) (1+ i))
+	 (j start (1+ j)))
+	((= j end))
+      (let ((char (char string j)))
+	(if (char-mode xp) (setq char (handle-char-mode xp char)))
+	(setf (char buffer i) char)))
+    (setf (buffer-ptr xp) new-buffer-end))
+  (values))
+
+(declaim (ftype (function (string xp-structure
+				  (mod #.array-total-size-limit)
+				  (mod #.array-total-size-limit))
+			  (values &optional))
+		write-string++))
+(defun write-string++ (string xp start end)
+  (when (> (buffer-ptr xp) (linel xp))
+    (force-some-output xp))
+  (write-string+++ string xp start end))
 
 (declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit))
@@ -762,58 +891,6 @@
 	  (when (null next-newline) (return nil))
 	  (pprint-newline+ :unconditional xp)
 	  (setq start (1+ sub-end)))))
-
-;note this checks (> BUFFER-PTR LINEL) instead of (> (LP<-BP) LINEL)
-;this is important so that when things are longer than a line they
-;end up getting printed in chunks of size LINEL.
-
-(declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
-(defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
-  (when (> (buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (let ((new-buffer-end (1+ (buffer-ptr xp))))
-    (check-size xp buffer new-buffer-end)
-    (if (char-mode xp) (setq char (handle-char-mode xp char)))
-    (setf (char (buffer xp) (buffer-ptr xp)) char)
-    (setf (buffer-ptr xp) new-buffer-end))
-  (values))
-
-(declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
-(defun force-some-output (xp)
-  (attempt-to-output xp nil nil)
-  (when (> (buffer-ptr xp) (linel xp)) ;only if printing off end of line
-    (attempt-to-output xp T T))
-  (values))
-
-(declaim (ftype (function (string xp-structure
-				  (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit))
-			  (values &optional))
-		write-string++))
-(defun write-string++ (string xp start end)
-  (when (> (buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (write-string+++ string xp start end))
-
-;never forces output; therefore safe to call from within output-line.
-
-(declaim (ftype (function (string xp-structure
-				  (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit))
-			  (values &optional))
-		write-string+++))
-(defun write-string+++ (string xp start end)
-  (let ((new-buffer-end (+ (buffer-ptr xp) (- end start))))
-    (check-size xp buffer new-buffer-end)
-    (do ((buffer (buffer xp))
-	 (i (buffer-ptr xp) (1+ i))
-	 (j start (1+ j)))
-	((= j end))
-      (let ((char (char string j)))
-	(if (char-mode xp) (setq char (handle-char-mode xp char)))
-	(setf (char buffer i) char)))
-    (setf (buffer-ptr xp) new-buffer-end))
-  (values))
 
 (declaim (ftype (function ((member :section :line-relative :section-relative :line)
 			   (integer 0 *)
@@ -910,74 +987,6 @@
 (defun pprint-indent+ (kind n xp)
   (enqueue xp :ind kind n))
 
-; The next function scans the queue looking for things it can do.
-;it keeps outputting things until the queue is empty, or it finds
-;a place where it cannot make a decision yet.
-
-(defmacro maybe-too-large (xp Qentry)
-  `(let ((limit (linel ,xp)))
-     (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
-       (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
-       (when (not (minusp (prefix-stack-ptr ,xp)))
-	 (decf limit (suffix-ptr ,xp))))
-     (cond ((Qend ,xp ,Qentry)
-	    (> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
-	   ((or force-newlines? (> (LP<-BP ,xp) limit)) T)
-	   (T (return nil)))))	;wait until later to decide.
-
-(defmacro misering? (xp)
-  `(and *print-miser-width*
-	(<= (- (linel ,xp) (initial-prefix-ptr ,xp)) *print-miser-width*)))
-
-;If flush-out? is T and force-newlines? is NIL then the buffer,
-;prefix-stack, and queue will be in an inconsistent state after the call.
-;You better not call it this way except as the last act of outputting.
-
-(declaim (ftype (function (xp-structure boolean boolean)
-			  (values &optional))
-		attempt-to-output))
-(defun attempt-to-output (xp force-newlines? flush-out?)
-  (do () ((> (Qleft xp) (Qright xp))
-	  (setf (Qleft xp) 0)
-	  (setf (Qright xp) #.(- queue-entry-size))) ;saves shifting
-    (case (Qtype xp (Qleft xp))
-      (:ind
-       (unless (misering? xp)
-	 (set-indentation-prefix xp
-	   (case (Qkind xp (Qleft xp))
-	     (:block (+ (initial-prefix-ptr xp) (Qarg xp (Qleft xp))))
-	     (T ; :current
-	       (+ (LP<-TP xp (Qpos xp (Qleft xp)))
-		  (Qarg xp (Qleft xp)))))))
-       (setf (Qleft xp) (Qnext (Qleft xp))))
-      (:start-block
-       (cond ((maybe-too-large xp (Qleft xp))
-	      (push-prefix-stack xp)
-	      (setf (initial-prefix-ptr xp) (prefix-ptr xp))
-	      (set-indentation-prefix xp (LP<-TP xp (Qpos xp (Qleft xp))))
-	      (let ((arg (Qarg xp (Qleft xp))))
-		(when (consp arg) (set-prefix xp (cdr arg)))
-		(setf (initial-prefix-ptr xp) (prefix-ptr xp))
-		(cond ((not (listp arg)) (set-suffix xp arg))
-		      ((car arg) (set-suffix xp (car arg)))))
-	      (setf (section-start-line xp) (line-no xp)))
-	     (T (incf (Qleft xp) (Qoffset xp (Qleft xp)))))
-       (setf (Qleft xp) (Qnext (Qleft xp))))
-      (:end-block (pop-prefix-stack xp) (setf (Qleft xp) (Qnext (Qleft xp))))
-      (T ; :newline
-       (when (case (Qkind xp (Qleft xp))
-	       (:fresh (not (zerop (LP<-BP xp))))
-	       (:miser (misering? xp))
-	       (:fill (or (misering? xp)
-			  (> (line-no xp) (section-start-line xp))
-			  (maybe-too-large xp (Qleft xp))))
-	       (T T)) ;(:linear :unconditional :mandatory)
-	 (output-line xp (Qleft xp))
-	 (setup-for-next-line xp (Qleft xp)))
-       (setf (Qleft xp) (Qnext (Qleft xp))))))
-  (when flush-out? (flush xp))
-  (values))
-
 ;this can only be called last!
 
 (declaim (ftype (function (xp-structure) (values &optional)) flush))
@@ -1034,16 +1043,6 @@
     (decf (buffer-offset xp) change)
     (when (not (member (Qkind xp Qentry) '(:unconditional :fresh)))
       (setf (section-start-line xp) (line-no xp))))
-  (values))
-
-(declaim (ftype (function (xp-structure Qindex) (values &optional)) set-indentation-prefix))
-(defun set-indentation-prefix (xp new-position)
-  (let ((new-ind (max (non-blank-prefix-ptr xp) new-position)))
-    (setf (prefix-ptr xp) (initial-prefix-ptr xp))
-    (check-size xp prefix new-ind)
-    (when (> new-ind (prefix-ptr xp))
-      (fill (prefix xp) #\space :start (prefix-ptr xp) :end new-ind))
-    (setf (prefix-ptr xp) new-ind))
   (values))
 
 (declaim (ftype (function (xp-structure string) (values &optional)) set-prefix))
