@@ -713,7 +713,7 @@
 			  (values character &optional))
 		handle-char-mode))
 (defun handle-char-mode (xp char)
-  (case (char-mode xp)
+  (ecase (char-mode xp)
     (:CAP0 (cond ((not (alphanumericp char)) char)
 		 (T (setf (char-mode xp) :DOWN) (char-upcase char))))
     (:CAP1 (cond ((not (alphanumericp char)) char)
@@ -721,7 +721,7 @@
     (:CAPW (cond ((alphanumericp char) (char-downcase char))
 		 (T (setf (char-mode xp) :CAP1) char)))
     (:UP (char-upcase char))
-    (T (char-downcase char)))) ;:DOWN
+    (:DOWN (char-downcase char))))
 
 ;All characters output are passed through the handler above.  However, it must
 ;be noted that on-each-line prefixes are only processed in the context of the
