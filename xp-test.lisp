@@ -55,7 +55,8 @@
 (in-package :xp-test)
 
 ;; (eval-when (:execute :load-toplevel :compile-toplevel) (xp::install #+symbolics :macro #+symbolics T))
-(declaim (special form test-list failed-tests *dt*))
+(declaim (special form test-list *dt*))
+(defvar failed-tests nil)
 (defvar in-tester nil)
 (defvar tests nil)
 (defvar compile-tests T)

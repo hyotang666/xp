@@ -2895,6 +2895,17 @@
     (set-pprint-dispatch+ '(cons (member system::nsplice)) (printer ",.") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member system::splice)) (printer ",@") 0 *IPD*)))
 
+#+ecl
+(eval-when (:load-toplevel :execute)
+  (flet ((printer (prefix)
+           (lambda (output exp &rest noise)
+	     (declare (ignore noise))
+	     (format output "~A~W" prefix (cadr exp)))))
+    (set-pprint-dispatch+ '(cons (member si:quasiquote)) (printer "`") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member si:unquote)) (printer ",") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member si:unquote-nsplice)) (printer ",.") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member si:unquote-splice)) (printer ",@") 0 *IPD*)))
+
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)
 
