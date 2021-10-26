@@ -55,7 +55,7 @@
 (defpackage :xp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
 	   prin1-to-string write-line write-string
-	   defstruct force-output clear-output)
+	   defstruct clear-output)
   (:shadow formatter copy-pprint-dispatch pprint-dispatch
 	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
 	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
@@ -78,7 +78,7 @@
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
 	  prin1-to-string write-line write-string
-	  defstruct force-output clear-output)
+	  defstruct clear-output)
   "printing functions redefined by xp.")
 
 ;must do the following in common lisps not supporting *print-shared*
@@ -1448,12 +1448,8 @@
   (attempt-to-output output T T)
   nil)
 
-(defun force-output (&optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (when (xp-structure-p stream)
-    (attempt-to-output stream T T)
-    (setq stream (base-stream stream)))
-  (cl:force-output stream)
+(defmethod trivial-gray-streams:stream-force-output ((output xp-structure))
+  (attempt-to-output output T T)
   nil)
 
 (defun clear-output (&optional (stream *standard-output*))
