@@ -214,7 +214,7 @@
 (defun set-pprint-dispatch+ (type-specifier function priority table)
   (let* ((category (specifier-category type-specifier))
 	 (pred
-	   (if (not (eq category 'other)) nil
+	   (if (not (eq category :other)) nil
 	       (let ((pred (specifier-fn type-specifier)))
 		 (if (and (consp (caddr pred))
 			  (symbolp (caaddr pred))
@@ -224,22 +224,22 @@
 	 (entry (if function (make-entry :test pred
 					 :fn function
 					 :full-spec (list priority type-specifier)))))
-    (case category
-      (cons-with-car
+    (ecase category
+      (:cons-with-car
 	(cond ((null entry) (remhash (cadadr type-specifier) (conses-with-cars table)))
 	      (T (setf (test entry)
 		       (count-if #'(lambda (e)
 				     (priority-> (car (full-spec e)) priority))
 				 (others table)))
 		 (setf (gethash (cadadr type-specifier) (conses-with-cars table)) entry))))
-      (structure-type
+      (:structure-type
 	(cond ((null entry) (remhash type-specifier (structures table)))
 	      (T (setf (test entry)
 		       (count-if #'(lambda (e)
 				     (priority-> (car (full-spec e)) priority))
 				 (others table)))
 		 (setf (gethash type-specifier (structures table)) entry))))
-      (T ;other
+      (:other
 	 (let ((old (car (member type-specifier (others table) :test #'equal
 				 :key #'(lambda (e) (cadr (full-spec e)))))))
 	   (when old
@@ -302,8 +302,7 @@
 (defun fits (obj entry) (funcall (test entry) obj))
 
 (declaim (ftype (function ((or symbol cons))
-			  ;; FIXME(?) Use keyword symbol.
-			  (values (member cons-with-car structure-type other) &optional))
+			  (values (member :cons-with-car :structure-type :other) &optional))
 		specifier-category))
 (defun specifier-category (spec)
   (cond ((and (consp spec)
@@ -314,9 +313,9 @@
 	      (eq (caadr spec) 'member)
 	      (consp (cdadr spec))
 	      (null (cddadr spec)))
-	 'cons-with-car)
-	((and (symbolp spec) (structure-type-p spec)) 'structure-type)
-	(T 'other)))
+	 :cons-with-car)
+	((and (symbolp spec) (structure-type-p spec)) :structure-type)
+	(T :other)))
 
 (defvar *preds-for-specs*
   '((T always-true) (cons consp) (simple-atom simple-atom-p) (other otherp)
