@@ -2867,6 +2867,22 @@
 
 (setq *IPD* (make-pprint-dispatch))
 
+;; BACKQUOTE.
+#+sbcl
+(eval-when (:load-toplevel :execute)
+  (flet ((print-comma (output comma &rest noise)
+           (declare (ignore noise))
+	   (funcall (formatter "~[,~;,.~;,@~]~W")
+		    output (sb-int:comma-kind comma)
+		    (sb-int:comma-expr comma)))
+	 (print-backquote (output backquote &rest noise)
+           (declare (ignore noise))
+	   (funcall (formatter "`~W")
+		    output (cadr backquote))))
+    (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member sb-int:quasiquote)) #'print-backquote 0 *IPD*)
+    (set-pprint-dispatch+ 'sb-impl::comma #'print-comma 0 *IPD*)))
+
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
 (set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)
 
