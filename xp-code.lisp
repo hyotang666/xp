@@ -54,7 +54,7 @@
 
 (defpackage :xp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
-	   prin1-to-string write-line write-string fresh-line
+	   prin1-to-string write-line write-string
 	   defstruct finish-output force-output clear-output)
   (:shadow formatter copy-pprint-dispatch pprint-dispatch
 	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
@@ -77,7 +77,7 @@
 
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
-	  prin1-to-string write-line write-string fresh-line
+	  prin1-to-string write-line write-string
 	  defstruct finish-output force-output clear-output)
   "printing functions redefined by xp.")
 
@@ -1433,14 +1433,11 @@
 ;This has to violate the XP data abstraction and fool with internal
 ;stuff, in order to find out the right info to return as the result.
 
-(defun fresh-line (&optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (cond ((xp-structure-p stream)
-	 (attempt-to-output stream T T) ;ok because we want newline
-	 (when (not (zerop (LP<-BP stream)))
-	   (pprint-newline+ :fresh stream)
-	   T))
-	(T (cl:fresh-line stream))))
+(defmethod trivial-gray-streams:stream-fresh-line ((output xp-structure))
+  (attempt-to-output output T T) ;ok because we want newline
+  (when (not (zerop (LP<-BP output)))
+    (pprint-newline+ :fresh output)
+    T))
 
 ;Each of these causes the stream to be pessimistic and insert
 ;newlines wherever it might have to, when forcing the partial output
