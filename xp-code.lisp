@@ -371,6 +371,9 @@
   (defvar prefix-min-size 256.)
   (defvar suffix-min-size 256.))
 
+(deftype char-mode ()
+  '(member nil :up :down :cap0 :cap1 :capw))
+
 (structure-ext:defstruct*
     (xp-structure (:conc-name nil)
 		  (:print-function describe-xp)
@@ -379,7 +382,7 @@
   LINEL ;;The line length to use for formatting.
   LINE-LIMIT ;;If non-NIL the max number of lines to print.
   LINE-NO ;;number of next line to be printed.
-  CHAR-MODE ;;NIL :UP :DOWN :CAP0 :CAP1 :CAPW
+  (CHAR-MODE nil :type char-mode)
   CHAR-MODE-COUNTER ;depth of nesting of ~(...~)
   DEPTH-IN-BLOCKS
    ;;Number of logical blocks at QRIGHT that are started but not ended.
@@ -692,8 +695,6 @@
 ;each mode specifies what should happen to every letter.  Therefore, inner
 ;nested modes never have any effect.  You can just ignore them.
 
-(deftype char-mode ()
-  '(member nil :up :down :cap0 :cap1 :capw))
 (declaim (ftype (function (xp-structure char-mode) (values &optional))
 		push-char-mode))
 (defun push-char-mode (xp new-mode)
