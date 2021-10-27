@@ -2022,7 +2022,7 @@
 	  `(funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ params)
 	  (let ((vars (mapcar #'(lambda (arg)
 				  (declare (ignore arg))
-				  (gentemp)) ; FIXME: gentemp is obsoleted.
+				  (gensym))
 			      params)))
 	    `(let ,(mapcar #'list vars params)
 	       (funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ vars)))))))
