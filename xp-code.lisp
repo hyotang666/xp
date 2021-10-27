@@ -81,6 +81,14 @@
 	  defstruct)
   "printing functions redefined by xp.")
 
+(uiop:define-package :xp-user
+  (:mix :xp :cl)
+  (:export #:*default-right-margin*
+	   #:*last-abbreviated-printing*
+	   #:*print-shared*
+	   . #.(loop :for s :being :each :external-symbol :of :cl
+		     :collect s)))
+
 ;must do the following in common lisps not supporting *print-shared*
 
 (defvar *print-shared* nil)

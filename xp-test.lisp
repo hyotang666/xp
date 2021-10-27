@@ -46,12 +46,9 @@
 
 #+:symbolics(use-package "CL")
 
-(in-package :cl-user)
-(uiop:define-package :xp-test (:mix :xp :cl)
-  (:export #:do-tests
-	   #:more
-	   #:do-failed-tests
-	   #:do-test))
+(defpackage :xp-test (:use :xp-user)
+  (:export #:do-tests #:more #:do-failed-tests #:do-test))
+
 (in-package :xp-test)
 
 ;; (eval-when (:execute :load-toplevel :compile-toplevel) (xp::install #+symbolics :macro #+symbolics T))
