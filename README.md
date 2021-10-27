@@ -51,10 +51,10 @@ Such bugs do not break read/print identity.
 ```
 
 ### Allegro
-* [ ] Loadable.
-* [ ] Testable.
-* [ ] Fixing critical bugs.
-* [ ] Passing the test.
+* [x] Loadable.
+* [x] Testable.
+* [x] Fixing critical bugs.
+* [x] Passing the test.
 
 ### CMUCL
 * [x] Loadable.

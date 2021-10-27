@@ -374,6 +374,7 @@
 (deftype char-mode ()
   '(member nil :up :down :cap0 :cap1 :capw))
 
+#+(OR)
 (structure-ext:defstruct*
     (xp-structure (:conc-name nil)
 		  (:print-function describe-xp)
@@ -440,6 +441,54 @@
    ;;this stores the suffixes that have to be printed to close of the current
    ;;open blocks.  For convenient in popping, the whole suffix
    ;;is stored in reverse order.
+
+(progn
+ (defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream)
+   ((base-stream :initform nil :initarg :base-stream :accessor
+		 base-stream)
+    (linel :initform nil :initarg :linel :accessor linel)
+    (line-limit :initform nil :initarg :line-limit :accessor
+		line-limit)
+    (line-no :initform nil :initarg :line-no :accessor line-no)
+    (char-mode :type char-mode :initform nil :initarg :char-mode
+	       :accessor char-mode)
+    (char-mode-counter :initform nil :initarg :char-mode-counter
+		       :accessor char-mode-counter)
+    (depth-in-blocks :initform nil :initarg :depth-in-blocks :accessor
+		     depth-in-blocks)
+    (block-stack :initform (make-array 35) :initarg :block-stack
+		 :accessor block-stack)
+    (block-stack-ptr :initform nil :initarg :block-stack-ptr :accessor
+		     block-stack-ptr)
+    (buffer :initform (make-array 256 :element-type 'character)
+	    :initarg :buffer :accessor buffer)
+    (charpos :initform nil :initarg :charpos :accessor charpos)
+    (buffer-ptr :initform nil :initarg :buffer-ptr :accessor
+		buffer-ptr)
+    (buffer-offset :initform nil :initarg :buffer-offset :accessor
+		   buffer-offset)
+    (queue :initform (make-array 525) :initarg :queue :accessor queue)
+    (qleft :initform nil :initarg :qleft :accessor qleft)
+    (qright :initform nil :initarg :qright :accessor qright)
+    (prefix :initform (make-array 256 :element-type 'character)
+	    :initarg :prefix :accessor prefix)
+    (prefix-stack :initform (make-array 150) :initarg :prefix-stack
+		  :accessor prefix-stack)
+    (prefix-stack-ptr :initform nil :initarg :prefix-stack-ptr
+		      :accessor prefix-stack-ptr)
+    (suffix :initform (make-array 256 :element-type 'character)
+	    :initarg :suffix :accessor suffix)))
+
+ (defun make-xp-structure (&rest args)
+   (apply #'make-instance 'xp-structure args))
+
+ (defmethod print-object ((obj xp-structure) stream)
+   (describe-xp obj stream *print-level*))
+
+ (defun xp-structure-p (arg)
+   (typep arg 'xp-structure))
+
+ 'xp-structure)
 
 
 (defmacro LP<-BP (xp &optional (ptr nil))
@@ -1442,7 +1491,7 @@
 	 (when (not (zerop (LP<-BP stream)))
 	   (pprint-newline+ :fresh stream)
 	   T))
-	(T (cl:fresh-line stream))))
+	(T (and (cl:fresh-line stream) t))))
 
 ;Each of these causes the stream to be pessimistic and insert
 ;newlines wherever it might have to, when forcing the partial output
@@ -2873,6 +2922,17 @@
     (set-pprint-dispatch+ '(cons (member si:unquote)) (printer ",") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member si:unquote-nsplice)) (printer ",.") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member si:unquote-splice)) (printer ",@") 0 *IPD*)))
+
+#+allegro
+(eval-when (:load-toplevel :execute)
+  (flet ((printer (prefix)
+           (lambda (output exp &rest noise)
+	     (declare (ignore noise))
+	     (format output "~A~W" prefix (cadr exp)))))
+    (set-pprint-dispatch+ '(cons (member excl::backquote)) (printer "`") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member excl::bq-comma)) (printer ",") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member excl::bq-comma-dot)) (printer ",.") 0 *IPD*)
+    (set-pprint-dispatch+ '(cons (member excl::bq-comma-atsign)) (printer ",@") 0 *IPD*)))
 
 #+(or :cmu)(eval-when (:load-toplevel :execute)
 (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
