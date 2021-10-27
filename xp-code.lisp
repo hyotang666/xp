@@ -750,21 +750,6 @@
 ;;; it keeps outputting things until the queue is empty, or it finds
 ;;; a place where it cannot make a decision yet.
 
-(defmacro maybe-too-large (xp Qentry)
-  `(let ((limit (linel ,xp)))
-     (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
-       (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
-       (when (not (minusp (prefix-stack-ptr ,xp)))
-	 (decf limit (suffix-ptr ,xp))))
-     (cond ((Qend ,xp ,Qentry)
-	    (> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
-	   ((or force-newlines? (> (LP<-BP ,xp) limit)) T)
-	   (T (return nil)))))	;wait until later to decide.
-
-(defmacro misering? (xp)
-  `(and *print-miser-width*
-	(<= (- (linel ,xp) (initial-prefix-ptr ,xp)) *print-miser-width*)))
-
 ;;; If flush-out? is T and force-newlines? is NIL then the buffer,
 ;;; prefix-stack, and queue will be in an inconsistent state after the call.
 ;;; You better not call it this way except as the last act of outputting.
@@ -773,6 +758,19 @@
 			  (values &optional))
 		attempt-to-output))
 (defun attempt-to-output (xp force-newlines? flush-out?)
+  (macrolet ((maybe-too-large (xp Qentry)
+              `(let ((limit (linel ,xp)))
+		 (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
+		   (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
+		   (when (not (minusp (prefix-stack-ptr ,xp)))
+		     (decf limit (suffix-ptr ,xp))))
+		 (cond ((Qend ,xp ,Qentry)
+			(> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
+		       ((or force-newlines? (> (LP<-BP ,xp) limit)) T)
+		       (T (return nil))))) ; wait until later to decide.
+	     (misering? (xp)
+               `(and *print-miser-width*
+		     (<= (- (linel ,xp) (initial-prefix-ptr ,xp)) *print-miser-width*))))
   (do () ((> (Qleft xp) (Qright xp))
 	  (setf (Qleft xp) 0)
 	  (setf (Qright xp) #.(- queue-entry-size))) ;saves shifting
@@ -812,7 +810,7 @@
 	 (setup-for-next-line xp (Qleft xp)))
        (setf (Qleft xp) (Qnext (Qleft xp))))))
   (when flush-out? (flush xp))
-  (values))
+  (values)))
 
 (declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
 (defun force-some-output (xp)
