@@ -30,11 +30,25 @@ Such bugs do not break read/print identity.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
 
+* Issue: CLISP is seemed to be not able to print list `(function foo)`.
+
+```lisp
+(cl:write '(function foo) :pretty t) => #'FOO
+(cl:write '(function foo) :pretty nil) => #'FOO
+```
+
 ### ECL
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
+
+* Issue: CLISP is seemed to be not able to print list `(function foo)`.
+
+```lisp
+(cl:write '(function foo) :pretty t) => #'FOO
+(cl:write '(function foo) :pretty nil) => #'FOO
+```
 
 ### Allegro
 * [ ] Loadable.
@@ -47,6 +61,22 @@ Such bugs do not break read/print identity.
 * [x] Testable.
 * [ ] Fixing critical bugs.
 * [ ] Passing the test.
+
+* Issue
+
+```lisp
+(lambda ()
+  (let ((*print-escape* t))
+    (let ((*print-escape* nil))
+      (cl:write-to-string "foo"))))
+#<Interpreted Function (LAMBDA () ...)>
+
+(funcall *) => "foo"
+
+(compile nil **) => #<Function "LAMBDA NIL" {...}>
+
+(funcall *) => "\"foo\""
+```
 
 ### ABCL
 * Issue: ABCL already have the package named "XP".
