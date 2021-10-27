@@ -43,7 +43,7 @@ Such bugs do not break read/print identity.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
 
-* Issue: CLISP is seemed to be not able to print list `(function foo)`.
+* Issue: ECL is seemed to be not able to print list `(function foo)`.
 
 ```lisp
 (cl:write '(function foo) :pretty t) => #'FOO
