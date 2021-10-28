@@ -382,121 +382,150 @@
 (deftype char-mode ()
   '(member nil :up :down :cap0 :cap1 :capw))
 
-#+(OR)
-(structure-ext:defstruct*
-    (xp-structure (:conc-name nil)
-		  (:print-function describe-xp)
-		  (:include trivial-gray-streams:fundamental-character-output-stream))
-  (BASE-STREAM nil) ;;The stream io eventually goes to.
-  LINEL ;;The line length to use for formatting.
-  LINE-LIMIT ;;If non-NIL the max number of lines to print.
-  LINE-NO ;;number of next line to be printed.
-  (CHAR-MODE nil :type char-mode)
-  CHAR-MODE-COUNTER ;depth of nesting of ~(...~)
-  DEPTH-IN-BLOCKS
-   ;;Number of logical blocks at QRIGHT that are started but not ended.
-  (BLOCK-STACK (make-array #.block-stack-min-size)) BLOCK-STACK-PTR
-   ;;This stack is pushed and popped in accordance with the way blocks are
-   ;;nested at the moment they are entered into the queue.  It contains the
-   ;;following block specific value.
-   ;;SECTION-START total position where the section (see AIM-1102)
-   ;;that is rightmost in the queue started.
-  (BUFFER (make-array #.buffer-min-size :element-type 'character))
-   CHARPOS BUFFER-PTR BUFFER-OFFSET
-   ;;This is a vector of characters (eg a string) that builds up the
-   ;;line images that will be printed out.  BUFFER-PTR is the
-   ;;buffer position where the next character should be inserted in
-   ;;the string.  CHARPOS is the output character position of the
-   ;;first character in the buffer (non-zero only if a partial line
-   ;;has been output).  BUFFER-OFFSET is used in computing total lengths.
-   ;;It is changed to reflect all shifting and insertion of prefixes so that
-   ;;total length computes things as they would be if they were
-   ;;all on one line.  Positions are kept three different ways
-   ;; Buffer position (eg BUFFER-PTR)
-   ;; Line position (eg (+ BUFFER-PTR CHARPOS)).  Indentations are stored in this form.
-   ;; Total position if all on one line (eg (+ BUFFER-PTR BUFFER-OFFSET))
-   ;;  Positions are stored in this form.
-  (QUEUE (make-array #.queue-min-size)) QLEFT QRIGHT
-   ;;This holds a queue of action descriptors.  QLEFT and QRIGHT
-   ;;point to the next entry to dequeue and the last entry enqueued
-   ;;respectively.  The queue is empty when
-   ;;(> QLEFT QRIGHT).  The queue entries have several parts:
-   ;;QTYPE one of :NEWLINE/:IND/:START-BLOCK/:END-BLOCK
-   ;;QKIND :LINEAR/:MISER/:FILL/:MANDATORY or :UNCONDITIONAL/:FRESH
-   ;; or :BLOCK/:CURRENT
-   ;;QPOS total position corresponding to this entry
-   ;;QDEPTH depth in blocks of this entry.
-   ;;QEND offset to entry marking end of section this entry starts. (NIL until known.)
-   ;; Only :start-block and non-literal :newline entries can start sections.
-   ;;QOFFSET offset to :END-BLOCK for :START-BLOCK (NIL until known).
-   ;;QARG for :IND indentation delta
-   ;;     for :START-BLOCK suffix in the block if any.
-   ;;                      or if per-line-prefix then cons of suffix and
-   ;;                      per-line-prefix.
-   ;;     for :END-BLOCK suffix for the block if any.
-  (PREFIX (make-array #.buffer-min-size :element-type 'character))
-   ;;this stores the prefix that should be used at the start of the line
-  (PREFIX-STACK (make-array #.prefix-stack-min-size)) PREFIX-STACK-PTR
-   ;;This stack is pushed and popped in accordance with the way blocks
-   ;;are nested at the moment things are taken off the queue and printed.
-   ;;It contains the following block specific values.
-   ;;PREFIX-PTR current length of PREFIX.
-   ;;SUFFIX-PTR current length of pending suffix
-   ;;NON-BLANK-PREFIX-PTR current length of non-blank prefix.
-   ;;INITIAL-PREFIX-PTR prefix-ptr at the start of this block.
-   ;;SECTION-START-LINE line-no value at last non-literal break at this level.
-  (SUFFIX (make-array #.buffer-min-size :element-type 'character)))
-   ;;this stores the suffixes that have to be printed to close of the current
-   ;;open blocks.  For convenient in popping, the whole suffix
-   ;;is stored in reverse order.
+(deftype newline-kind ()
+  '(member :mandatory :miser :fill :linear))
+(deftype indent-kind ()
+  '(member :current :block))
 
-(progn
- (defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream)
-   ((base-stream :initform nil :initarg :base-stream :accessor
-		 base-stream)
-    (linel :initform nil :initarg :linel :accessor linel)
-    (line-limit :initform nil :initarg :line-limit :accessor
-		line-limit)
-    (line-no :initform nil :initarg :line-no :accessor line-no)
-    (char-mode :type char-mode :initform nil :initarg :char-mode
-	       :accessor char-mode)
-    (char-mode-counter :initform nil :initarg :char-mode-counter
-		       :accessor char-mode-counter)
-    (depth-in-blocks :initform nil :initarg :depth-in-blocks :accessor
-		     depth-in-blocks)
-    (block-stack :initform (make-array 35) :initarg :block-stack
-		 :accessor block-stack)
-    (block-stack-ptr :initform nil :initarg :block-stack-ptr :accessor
-		     block-stack-ptr)
-    (buffer :initform (make-array 256 :element-type 'character)
-	    :initarg :buffer :accessor buffer)
-    (charpos :initform nil :initarg :charpos :accessor charpos)
-    (buffer-ptr :initform nil :initarg :buffer-ptr :accessor
-		buffer-ptr)
-    (buffer-offset :initform nil :initarg :buffer-offset :accessor
-		   buffer-offset)
-    (queue :initform (make-array 525) :initarg :queue :accessor queue)
-    (qleft :initform nil :initarg :qleft :accessor qleft)
-    (qright :initform nil :initarg :qright :accessor qright)
-    (prefix :initform (make-array 256 :element-type 'character)
-	    :initarg :prefix :accessor prefix)
-    (prefix-stack :initform (make-array 150) :initarg :prefix-stack
-		  :accessor prefix-stack)
-    (prefix-stack-ptr :initform nil :initarg :prefix-stack-ptr
-		      :accessor prefix-stack-ptr)
-    (suffix :initform (make-array 256 :element-type 'character)
-	    :initarg :suffix :accessor suffix)))
+;;;; Quque entries.
+(deftype Qtype () '(member :newline :ind :start-block :end-block))
+(deftype Qkind ()
+  '(or newline-kind (member :unconditional :fresh) indent-kind))
+(deftype Qpos ()
+  "Total position corresponding to this entry"
+  '(integer 0 #.queue-min-size))
+(deftype Qdepth ()
+  "Depth in blocks of this entry."
+  '(integer 0 *))
+(deftype Qend ()
+  "Offset to entry marking end of section this entry starts. (NIL until known.)
+  Only :start-block and non-literal :newline entries can start sections."
+  '(or null (integer 0 *)))
+(deftype Qoffset ()
+  "Offset to :END-BLOCK for :START-BLOCK (NIL until known)."
+  '(or null (integer 0 *)))
+(deftype Qarg ()
+  "QARG for :IND indentation delta
+       for :START-BLOCK suffix in the block if any.
+                        or if per-line-prefix then cons of suffix and
+                        per-line-prefix.
+       for :END-BLOCK suffix for the block if any."
+  '(or string cons))
+(deftype Qentry ()
+  "The queue entries have several parts."
+  '(or Qtype Qkind Qpos Qdepth Qend Qoffset Qarg))
 
- (defun make-xp-structure (&rest args)
-   (apply #'make-instance 'xp-structure args))
+;;;; Prefix-stack entries.
+(deftype pointer () '(mod #.array-total-size-limit))
+(deftype prefix-ptr () "Current length of PREFIX." 'pointer)
+(deftype suffix-ptr () "Current length of pending suffix." 'pointer)
+(deftype non-blank-prefix-ptr () "Current length of non-blank prefix." 'pointer)
+(deftype initial-prefix-ptr () "Prefix-ptr at the start of this block." 'pointer)
+(deftype section-start-line ()
+  "Line-no value at last non-literal break at this level."
+  'pointer)
+(deftype prefix-stack-entry ()
+  '(or prefix-ptr suffix-ptr non-blank-prefix-ptr initial-prefix-ptr section-start-line))
 
- (defmethod print-object ((obj xp-structure) stream)
-   (describe-xp obj stream *print-level*))
+(defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream)
+  ((base-stream :initform nil :initarg :base-stream
+       	 :type (or null stream) :accessor base-stream
+       	 :documentation "The stream io eventually goes to.")
+   (linel :initform nil :initarg :linel :accessor linel
+          :documentation "The line length to use for formatting." )
+   (line-limit :initform nil :initarg :line-limit :accessor line-limit
+       	:documentation "If non-NIL the max number of lines to print.")
+   (line-no :initform nil :initarg :line-no :accessor line-no
+            :documentation "number of next line to be printed.")
+   (char-mode :type char-mode :initform nil :initarg :char-mode
+              :accessor char-mode)
+   (char-mode-counter :initform nil :initarg :char-mode-counter
+       	       :accessor char-mode-counter
+       	       :documentation "depth of nesting of ~(...~)")
+   (depth-in-blocks
+     :initform nil :initarg :depth-in-blocks
+     :accessor depth-in-blocks
+     :documentation "Number of logical blocks at QRIGHT that are started but not ended.")
+   (block-stack
+     :initform (make-array #.block-stack-min-size) :initarg :block-stack
+     :accessor block-stack
+     :documentation
+     #.(cl:format nil "~@{~A~^~%~}"
+       	   "This stack is pushed and popped in accordance with the way blocks are"
+       	   "nested at the moment they are entered into the queue.  It contains the"
+       	   "following block specific value."
+       	   "SECTION-START total position where the section (see AIM-1102)"
+       	   "that is rightmost in the queue started."))
+   (block-stack-ptr :initform nil :initarg :block-stack-ptr
+       	     :accessor block-stack-ptr)
+   (buffer
+     :initform (make-array #.buffer-min-size :element-type 'character)
+     :initarg :buffer :accessor buffer
+     :documentation
+     #.(cl:format nil "~@{~A~^~%~}"
+       	   "This is a vector of characters (eg a string) that builds up the"
+       	   "line images that will be printed out."))
+   (charpos
+     :initform nil :initarg :charpos :accessor charpos
+     :documentation
+     #.(cl:format nil "~@{~A~^~%~}"
+       	   "The output character position of the first character in the buffer"
+       	   "(non-zero only if a partial line has been output)."))
+   (buffer-ptr
+     :initform nil :initarg :buffer-ptr :accessor buffer-ptr
+     :documentation
+     "The buffer position where the next character should be inserted in the string.")
+   (buffer-offset
+     :initform nil :initarg :buffer-offset :accessor buffer-offset
+     :documentation
+     #.(cl:format nil "~@{~A~^~%~}"
+       	   "Used in computing total lengths."
+       	   "It is changed to reflect all shifting and insertion of prefixes so that"
+       	   "total length computes things as they would be if they were"
+       	   "all on one line.  Positions are kept three different ways"
+       	   "Buffer position (eg BUFFER-PTR)"
+       	   "Line position (eg (+ BUFFER-PTR CHARPOS)).  Indentations are stored in this form."
+       	   "Total position if all on one line (eg (+ BUFFER-PTR BUFFER-OFFSET))"
+       	   " Positions are stored in this form."))
+   (queue :initform (make-array #.queue-min-size :element-type 'Qentry)
+          :initarg :queue :accessor queue
+          :documentation
+          "This holds a queue of action descriptors.")
+   (qleft :initform nil :initarg :qleft :accessor qleft
+          :documentation "Point to the next entry to dequeue.")
+   (qright :initform nil :initarg :qright :accessor qright
+           :documentation "Point to the last entry enqueued."
+           )
+   (prefix :initform (make-array #.buffer-min-size :element-type 'character)
+           :initarg :prefix :accessor prefix
+           :documentation
+           "Stores the prefix that should be used at the start of the line")
+   (prefix-stack
+     :initform (make-array #.prefix-stack-min-size :element-type 'prefix-stack-entry)
+     :initarg :prefix-stack :accessor prefix-stack
+     :documentation
+     "This stack is pushed and popped in accordance with the way blocks
+     are nested at the moment things are taken off the queue and printed.")
+   (prefix-stack-ptr :initform nil :initarg :prefix-stack-ptr
+       	      :accessor prefix-stack-ptr)
+   (suffix :initform (make-array #.buffer-min-size :element-type 'character)
+           :initarg :suffix :accessor suffix
+           :documentation
+           "Stores the suffixes that have to be printed to close of the current
+           open blocks.  For convenient in popping, the whole suffix
+           is stored in reverse order.")))
 
- (defun xp-structure-p (arg)
-   (typep arg 'xp-structure))
+(defun Qemptyp (xp)
+  (> (Qleft xp) (Qright xp)))
 
- 'xp-structure)
+(defun make-xp-structure (&rest args)
+  (apply #'make-instance 'xp-structure args))
+
+(defmethod print-object ((obj xp-structure) stream)
+  (describe-xp obj stream *print-level*))
+
+(defun xp-structure-p (arg)
+  (typep arg 'xp-structure))
 
 
 (defmacro LP<-BP (xp &optional (ptr nil))
@@ -598,15 +627,7 @@
 ;does not ever cause a shift, and even in long printout, the queue is
 ;shifted left for free every time it happens to empty out.
 
-(deftype queue-elt-type ()
-  '(member :newline :start-block :end-block :ind))
-(deftype newline-kind ()
-  '(member :mandatory :miser :fill :linear))
-(deftype indent-kind ()
-  '(member :current :block))
-(deftype kind ()
-  '(or null newline-kind indent-kind (member :fresh :unconditional)))
-(declaim (ftype (function (xp-structure queue-elt-type kind &optional (or null t))
+(declaim (ftype (function (xp-structure Qtype (or null Qkind) &optional (or null t))
 			  (values &optional))
 		enqueue))
 (defun enqueue (xp type kind &optional arg)
@@ -663,7 +684,7 @@
                        (subseq (prefix xp) 0 (max (prefix-ptr xp) 0)))
           (cl:format s "~&suffix= ~S"
                        (subseq (suffix xp) 0 (max (suffix-ptr xp) 0))))
-        (unless (> (Qleft xp) (Qright xp))
+        (unless (Qemptyp xp)
           (cl:format s "~&ptr type         kind           pos depth end offset arg")
           (do ((p (Qleft xp) (Qnext p))) ((> p (Qright xp)))
             (cl:format s "~&~4A~13A~15A~4A~6A~4A~7A~A"
@@ -829,7 +850,7 @@
 	     (misering? (xp)
                `(and *print-miser-width*
 		     (<= (- (linel ,xp) (initial-prefix-ptr ,xp)) *print-miser-width*))))
-  (do () ((> (Qleft xp) (Qright xp))
+  (do () ((Qemptyp xp)
 	  (setf (Qleft xp) 0)
 	  (setf (Qright xp) #.(- queue-entry-size))) ;saves shifting
     (case (Qtype xp (Qleft xp))
