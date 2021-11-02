@@ -52,7 +52,7 @@
 
 ;The companion file "XPDOC.TXT" contains brief documentation.
 
-(defpackage :xp (:use :cl)
+(defpackage :pxp (:use :cl)
   (:shadow write print prin1 princ pprint format write-to-string princ-to-string
 	   prin1-to-string write-line write-string fresh-line
 	   defstruct)
@@ -71,9 +71,7 @@
 	   #:*last-abbreviated-printing*
 	   *print-shared*))
 
-(in-package :xp)
-
-(provide "XP")
+(in-package :pxp)
 
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
@@ -82,7 +80,7 @@
   "printing functions redefined by xp.")
 
 (uiop:define-package :xp-user
-  (:mix :xp :cl)
+  (:mix :pxp :cl)
   (:export #:*default-right-margin*
 	   #:*last-abbreviated-printing*
 	   #:*print-shared*
@@ -551,11 +549,11 @@
   (let* ((min-size
 	   (symbol-value
 	     (intern (concatenate 'string (string vect) "-MIN-SIZE")
-		     (find-package :xp))))
+		     (find-package :pxp))))
 	 (entry-size
 	   (symbol-value
 	     (intern (concatenate 'string (string vect) "-ENTRY-SIZE")
-		     (find-package :xp)))))
+		     (find-package :pxp)))))
     `(when (and (> ,ptr ,(- min-size entry-size)) ;seldom happens
 		(> ,ptr (- (length (,vect ,xp)) ,entry-size)))
        (let* ((old (,vect ,xp))
@@ -1551,7 +1549,7 @@
 		     "PRINT-" (string (package-name
 					(symbol-package struct-name)))
 		     ":" (string struct-name))
-		   (find-package :xp))))
+		   (find-package :pxp))))
     (cond (printer
 	   `(eval-when (:execute :load-toplevel :compile-toplevel)
 	      (cl:defstruct ,name ,@ body)
@@ -1680,7 +1678,7 @@
 ;command.  This includes the matching end command for paired commands.
 
 (defmacro def-format-handler (char args &body body)
-  (let ((name (intern (cl:format nil "FORMAT-~A" char) (find-package :xp))))
+  (let ((name (intern (cl:format nil "FORMAT-~A" char) (find-package :pxp))))
     `(eval-when (:execute :load-toplevel :compile-toplevel)
        (defun ,name ,args ,@ body)
        (setf (gethash (char-upcase ,char) *fn-table*) (function ,name))
@@ -2589,7 +2587,7 @@
 	(when (or (not (consp ls)) (not (symbolp (car ls))) (minusp i))
 	  (return nil)))
       (pprint-fill xp list)
-      (funcall (formatter "~:<~@{~:/xp:pprint-fill/~^ ~_~}~:>") xp list)))
+      (funcall (formatter "~:<~@{~:/pxp:pprint-fill/~^ ~_~}~:>") xp list)))
 
 (defun block-like (xp list &rest args)
     (declare (ignore args))
@@ -2597,7 +2595,7 @@
 
 (defun defun-like (xp list &rest args)
     (declare (ignore args))
-  (funcall (formatter "~:<~1I~W~^ ~@_~W~^ ~@_~:/xp:pprint-fill/~^~@{ ~_~W~^~}~:>")
+  (funcall (formatter "~:<~1I~W~^ ~@_~W~^ ~@_~:/pxp:pprint-fill/~^~@{ ~_~W~^~}~:>")
 	   xp list))
 
 (defun print-fancy-fn-call (xp list template)
@@ -2641,10 +2639,10 @@
 ;cover anything new you define.
 
 (defun let-print (xp obj)
-  (funcall (formatter "~:<~1I~W~^ ~@_~/xp:bind-list/~^~@{ ~_~W~^~}~:>") xp obj))
+  (funcall (formatter "~:<~1I~W~^ ~@_~/pxp:bind-list/~^~@{ ~_~W~^~}~:>") xp obj))
 
 (defun cond-print (xp obj)
-  (funcall (formatter "~:<~W~^ ~:I~@_~@{~:/xp:pprint-linear/~^ ~_~}~:>") xp obj))
+  (funcall (formatter "~:<~W~^ ~:I~@_~@{~:/pxp:pprint-linear/~^ ~_~}~:>") xp obj))
 
 (defun dmm-print (xp list)
   (print-fancy-fn-call xp list '(3 1)))
@@ -2654,12 +2652,12 @@
 
 (defun do-print (xp obj)
   (funcall
- (formatter "~:<~W~^ ~:I~@_~/xp:bind-list/~^ ~_~:/xp:pprint-linear/ ~1I~^~@{ ~_~W~^~}~:>")
+ (formatter "~:<~W~^ ~:I~@_~/pxp:bind-list/~^ ~_~:/pxp:pprint-linear/ ~1I~^~@{ ~_~W~^~}~:>")
            xp obj))
 
 
 (defun flet-print (xp obj)
-  (funcall (formatter "~:<~1I~W~^ ~@_~:<~@{~/xp:block-like/~^ ~_~}~:>~^~@{ ~_~W~^~}~:>")
+  (funcall (formatter "~:<~1I~W~^ ~@_~:<~@{~/pxp:block-like/~^ ~_~}~:>~^~@{ ~_~W~^~}~:>")
 	   xp obj))
 
 (defun function-print (xp list)
@@ -2673,7 +2671,7 @@
 (defun prog-print (xp list)
   (let ((need-newline T) (indentation (1+ (length (symbol-name (car list))))))
     (declare (special need-newline indentation))
-    (funcall (formatter "~:<~W~^ ~:/xp:pprint-fill/~^ ~@{~/xp:maybelab/~^ ~}~:>")
+    (funcall (formatter "~:<~W~^ ~:/pxp:pprint-fill/~^ ~@{~/pxp:maybelab/~^ ~}~:>")
 	     xp list)))
 
 (defun setq-print (xp obj)
@@ -2689,7 +2687,7 @@
 			   (symbolp (cadr list)) (cadr list)))
 	(indentation (1+ (length (symbol-name (car list))))))
     (declare (special need-newline indentation))
-    (funcall (formatter "~:<~W~^ ~@{~/xp:maybelab/~^ ~}~:>") xp list)))
+    (funcall (formatter "~:<~W~^ ~@{~/pxp:maybelab/~^ ~}~:>") xp list)))
 
 (defun up-print (xp list)
   (print-fancy-fn-call xp list '(0 3 1 1)))
@@ -2857,7 +2855,7 @@
 (defvar *bq-list-to-vector* #+cmu '#:no-such) ;turned off
 
 (defun bq-vector-print (xp obj)
-  (funcall (xp:formatter "`#~W") xp (car (bqtify obj))))
+  (funcall (pxp:formatter "`#~W") xp (car (bqtify obj))))
 
 (cl:defstruct bq-struct code data)
 
@@ -3066,11 +3064,11 @@
   (when (not remove)
     (when macro
       (set-dispatch-macro-character #\# #\" #'format-string-reader))
-    (when (not (eq package (find-package :xp)))
-      (use-package :xp package)
+    (when (not (eq package (find-package :pxp)))
+      (use-package :pxp package)
       (when shadow (shadowing-import *xp-printing-functions* package))))
-  (when (and remove (member (find-package :xp) (package-use-list package)))
-    (unuse-package :xp package)
+  (when (and remove (member (find-package :pxp) (package-use-list package)))
+    (unuse-package :pxp package)
     (dolist (sym (intersection *xp-printing-functions*
 			       (package-shadowing-symbols package)))
       (unintern sym package)))

@@ -1,7 +1,7 @@
 ; vim: ft=lisp
 (in-package :asdf)
 
-(defsystem "xp"
+(defsystem "pxp"
   :depends-on
   (
    "uiop"			; Utilities implicitly depends on via asdf.
@@ -10,3 +10,4 @@
    )
   :components ((:file "xp-code"))
   :in-order-to ((test-op (test-op "xp-test"))))
+

@@ -94,7 +94,7 @@
 	:ok))))  ;doesn't happen when abort out of error.
 
 (defun do-tests ()
-  (setq xp::*format-string-cache* T)
+  (setq pxp::*format-string-cache* t)
   (cl:format T "~% Running the suite of ~S test cases~%" (length test-list))
   (setq tests (do ((i (1- (length test-list)) (1- i))
 		   (r nil (cons i r)))
@@ -127,14 +127,14 @@
   (test-ordinary (cadr form)))
 
 (defun etest (form)
-  (let ((xp::*testing-errors* T))
+  (let ((pxp::*testing-errors* T))
      (catch :testing-errors (eval form))))
 
 ;This tests things where cl:format and xp::format must always be identical.
 
 (defmacro formats (f-string &rest args)
   `(if (not (string= (cl:format nil ,f-string ,@args)
-		     (xp::format nil (formatter ,f-string) ,@args)))
+		     (pxp::format nil (formatter ,f-string) ,@args)))
        'format-xp-and-format-disagree))
 
 ;this compares FORMAT-XP with FORMAT only on the lispm, so that bugs
@@ -144,11 +144,11 @@
 	  (mapcar #'(lambda (a) (if (stringp a) `(formatter ,a) a)) stuff)))
   #+symbolics
     `(let* ((format-value (lisp:format nil .,stuff))
-	    (xp-value (xp::format nil .,format-xp-stuff)))
+	    (xp-value (pxp::format nil .,format-xp-stuff)))
        (if (string= format-value xp-value) xp-value
 	   `(xp-format-output ,xp-value and
 			      lisp-format-output ,format-value disagree)))
-  #-symbolics`(xp::format nil ,@format-xp-stuff)))
+  #-symbolics`(pxp::format nil ,@format-xp-stuff)))
 
 (defmacro plet (width miser &body body)
   `(let ((*PRINT-RIGHT-MARGIN* ,width)
@@ -170,16 +170,16 @@
 (defmacro prints (thing &rest bindings)
   `(plet 50 0
      (let* (,@ bindings
-	    (xp-result (xp::write-to-string ,thing))
+	    (xp-result (pxp::write-to-string ,thing))
 	    (normal-result (let ((*print-pretty* nil)) (cl:write-to-string ,thing))))
        (if (not (string= xp-result normal-result))
-	   `("xp::print-output" ,xp-result and "cl::print-output"
+	   `("pxp::print-output" ,xp-result and "cl::print-output"
 	     ,normal-result disagree)))))
 
 (defmacro print*s (thing &rest bindings)
   `(plet 50 0
      (let* (,@ bindings
-	    (xp-result (xp::write-to-string ,thing))
+	    (xp-result (pxp::write-to-string ,thing))
 	    (normal-result (cl:write-to-string ,thing)))
        (if (string= xp-result normal-result) normal-result
 	   `(print*-output ,xp-result and print-output
@@ -188,16 +188,16 @@
 (defmacro print*c (thing &rest bindings)
   (push '(*print-circle* T) bindings)
   `(plet 150 0
-     (let* ,bindings (xp::write-to-string (read-from-string ,thing)))))
+     (let* ,bindings (pxp::write-to-string (read-from-string ,thing)))))
 
 (defmacro format*c (string thing &rest bindings)
   (push '(*print-circle* T) bindings)
   `(plet 150 0
      (let* ,bindings
-       (xp::format nil ,string (read-from-string ,thing)))))
+       (pxp::format nil ,string (read-from-string ,thing)))))
 
 (defmacro ftest (width miser form &rest bindings)
-  `(plet ,width ,miser (let ,bindings (xp::write-to-string ,form))))
+  `(plet ,width ,miser (let ,bindings (pxp::write-to-string ,form))))
 
 (setq test-list '(
 
@@ -368,26 +368,26 @@ test")
 
   ((format-xps "test~d ~? test" 2 "(item ~a)" '(4))
    "test2 (item 4) test")
-  ((xp::format nil (formatter "test~d ~? test") 2 "(item ~a)" '(4))
+  ((pxp::format nil (formatter "test~d ~? test") 2 "(item ~a)" '(4))
    "test2 (item 4) test")
   ((let ((string "(item ~a)"))
-     (list (xp::format nil string 4)
-	   (xp::format nil (formatter "test~d ~@? test") 2 string 4)
-	   (xp::format nil (formatter "test~d ~@? test") 2 string 4)))
+     (list (pxp::format nil string 4)
+	   (pxp::format nil (formatter "test~d ~@? test") 2 string 4)
+	   (pxp::format nil (formatter "test~d ~@? test") 2 string 4)))
    ("(item 4)" "test2 (item 4) test" "test2 (item 4) test"))
-  ((plet 20 0 (xp::format nil (formatter "test~d ~? test") 2 (formatter "(item ~a~^)") '(4)))
+  ((plet 20 0 (pxp::format nil (formatter "test~d ~? test") 2 (formatter "(item ~a~^)") '(4)))
    "test2 (item 4 test")
-  ((plet 20 0 (xp::format nil (formatter "test~d ~? ~D test")
+  ((plet 20 0 (pxp::format nil (formatter "test~d ~? ~D test")
 			  2 (formatter "(item ~a~0^)") '(4 5) 6))
    "test2 (item 4 6 test")
 
   ((format-xps "test~d ~@? test ~A" 2 "(item ~a)" 4 5)
    "test2 (item 4) test 5")
-  ((xp::format nil (formatter "test~d ~@? test ~A") 2 "(item ~a)" 4 5)
+  ((pxp::format nil (formatter "test~d ~@? test ~A") 2 "(item ~a)" 4 5)
    "test2 (item 4) test 5")
-  ((xp::format nil (formatter "test~d ~@? test ~A") 2 "(item ~a~1:*)" 4 5)
+  ((pxp::format nil (formatter "test~d ~@? test ~A") 2 "(item ~a~1:*)" 4 5)
    "test2 (item 4) test 4")
-  ((plet 20 0 (xp::format nil (formatter "test~d ~@? test ~A")
+  ((plet 20 0 (pxp::format nil (formatter "test~d ~@? test ~A")
 			  2 (formatter "(item ~a~0^)") 4 5))
    "test2 (item 4 test 5")
 
@@ -397,20 +397,20 @@ test")
    "tEstTest One test")
   ((format-xps "tEst~:(tesT~S~) test" 'one)
    "tEstTestone test")
-  ((xp::format nil (formatter "tEst~:( tesT~T~S~) test") 'one)
+  ((pxp::format nil (formatter "tEst~:( tesT~T~S~) test") 'one)
    "tEst Test One test")
   ((format-xps "tEst~@( tesT ~S~) test" 'one)
    "tEst Test one test")
   ((format-xps "tEst~:@( tesT ~S~) test" 'one)
    "tEst TEST ONE test")
-  ((plet 30 0 (xp::format nil (formatter "~:(~W~)")
+  ((plet 30 0 (pxp::format nil (formatter "~:(~W~)")
 		       '(let ((a (foo 3)) (b (foo 4)) (c 1))
 			  (tuz a b))))
    "(Let ((A (Foo 3))
       (B (Foo 4))
       (C 1))
   (Tuz A B))")
-  ((plet 50 0 (xp::format nil
+  ((plet 50 0 (pxp::format nil
      (formatter "foo ~@<aa~@;p~:@_ ~:@(hi ~@<bb ~@;q~(~:@_R~:@_S~)~:>~:@_t~)~:>u")))
    "foo aap
     aa HI BB Q
@@ -451,7 +451,7 @@ test")
   ((format-xps "~V@{~a~^,~}." 2 1 2 3 4) "1,2,.")
   ((format-xps "~2@{~a~^,~}." 1) "1.")
   ((format-xps "~@{foo~:}.") "foo.")
-  ((plet 20 0 (xp::format nil (formatter "~@{~a~#,1^,~} ~A.") 1 2 3 4)) "1,2,3 4.")
+  ((plet 20 0 (pxp::format nil (formatter "~@{~a~#,1^,~} ~A.") 1 2 3 4)) "1,2,3 4.")
   ((format-xps "~@{~a~3@*~^,~a~^,~}." 1 2 3 4 5 6 7 8 9) "1,4,5,8,9.")
 
   ((format-xps "~:@{~a~^,~}." '(1 2) '(3 4)) "1,3,.")
@@ -469,316 +469,316 @@ test")
   ((format-xps "~@{~}." "~A+~A," 1 2 3 4) "1+2,3+4,.")
   ((format-xps "~:{~}." "~A+~A," '((1 2) (3 4))) "1+2,3+4,.")
   ((format-xps "~:@{~}." "~A+~A," '(1 2) '(3 4)) "1+2,3+4,.")
-  ((xp::format nil (formatter "~{~}.") (formatter "~A~^+~A,") '(1 2 3)) "1+2,3.")
-  ((xp::format nil (formatter "~:{~}.") (formatter "~A~^+~A,") '((1) (2 3))) "12+3,.")
+  ((pxp::format nil (formatter "~{~}.") (formatter "~A~^+~A,") '(1 2 3)) "1+2,3.")
+  ((pxp::format nil (formatter "~:{~}.") (formatter "~A~^+~A,") '((1) (2 3))) "12+3,.")
 
 ;; ~^ tested in the relevant subcontexts above and below
 
 
 ;the following test extended features of standard format codes.
 
-  ((xp::format nil (formatter "test~:ta")) "test a")
-  ((xp::format nil (formatter "test~8:ta")) "test    a")
-  ((xp::format nil (formatter "test~V,V:ta") 8 3) "test    a")
-  ((xp::format nil (formatter "test~0,3:ta")) "test  a")
-  ((xp::format nil (formatter "test~0,4:ta")) "test    a")
-  ((xp::format nil (formatter "test~0,5:ta")) "test a")
+  ((pxp::format nil (formatter "test~:ta")) "test a")
+  ((pxp::format nil (formatter "test~8:ta")) "test    a")
+  ((pxp::format nil (formatter "test~V,V:ta") 8 3) "test    a")
+  ((pxp::format nil (formatter "test~0,3:ta")) "test  a")
+  ((pxp::format nil (formatter "test~0,4:ta")) "test    a")
+  ((pxp::format nil (formatter "test~0,5:ta")) "test a")
 
-  ((xp::format nil (formatter "test~@:ta")) "test a")
-  ((xp::format nil (formatter "test~8@:ta")) "test        a")
-  ((xp::format nil (formatter "test~V,V@:ta") 8 3) "test        a")
-  ((xp::format nil (formatter "test~8,5@:ta")) "test           a")
-  ((xp::format nil (formatter "test~0,3@:ta")) "test  a")
-  ((xp::format nil (formatter "test~0,4@:ta")) "testa")
+  ((pxp::format nil (formatter "test~@:ta")) "test a")
+  ((pxp::format nil (formatter "test~8@:ta")) "test        a")
+  ((pxp::format nil (formatter "test~V,V@:ta") 8 3) "test        a")
+  ((pxp::format nil (formatter "test~8,5@:ta")) "test           a")
+  ((pxp::format nil (formatter "test~0,3@:ta")) "test  a")
+  ((pxp::format nil (formatter "test~0,4@:ta")) "testa")
 
-  ((xp::format nil (formatter "fo-~<test~:ta~:>") nil) "fo-test a")
-  ((xp::format nil (formatter "fo-~<test~8:ta~:>") nil) "fo-test    a")
-  ((xp::format nil (formatter "fo-~<test~8,3:ta~:>") nil) "fo-test    a")
-  ((xp::format nil (formatter "fo-~<test~0,3:ta~:>") nil) "fo-test  a")
-  ((xp::format nil (formatter "fo-~<test~0,4:ta~:>") nil) "fo-test    a")
-  ((xp::format nil (formatter "fo-~<test~0,5:ta~:>") nil) "fo-test a")
+  ((pxp::format nil (formatter "fo-~<test~:ta~:>") nil) "fo-test a")
+  ((pxp::format nil (formatter "fo-~<test~8:ta~:>") nil) "fo-test    a")
+  ((pxp::format nil (formatter "fo-~<test~8,3:ta~:>") nil) "fo-test    a")
+  ((pxp::format nil (formatter "fo-~<test~0,3:ta~:>") nil) "fo-test  a")
+  ((pxp::format nil (formatter "fo-~<test~0,4:ta~:>") nil) "fo-test    a")
+  ((pxp::format nil (formatter "fo-~<test~0,5:ta~:>") nil) "fo-test a")
 
-  ((xp::format nil (formatter "fo-~:@_~<test~0,3ta~:>") nil) "fo-
+  ((pxp::format nil (formatter "fo-~:@_~<test~0,3ta~:>") nil) "fo-
 test  a")
-  ((xp::format nil (formatter "fo-~:@_~<test~0,4ta~:>") nil) "fo-
+  ((pxp::format nil (formatter "fo-~:@_~<test~0,4ta~:>") nil) "fo-
 test    a")
-  ((xp::format nil (formatter "fo-~:@_~<test~0,5ta~:>") nil) "fo-
+  ((pxp::format nil (formatter "fo-~:@_~<test~0,5ta~:>") nil) "fo-
 test a")
 
-  ((xp::format nil (formatter "fo-~<test~:@ta~:>") nil) "fo-test a")
-  ((xp::format nil (formatter "fo-~<test~8:@ta~:>") nil) "fo-test        a")
-  ((xp::format nil (formatter "fo-~<test~8,3:@ta~:>") nil) "fo-test        a")
-  ((xp::format nil (formatter "fo-~<test~8,5:@ta~:>") nil) "fo-test           a")
-  ((xp::format nil (formatter "fo-~<test~0,3:@ta~:>") nil) "fo-test  a")
-  ((xp::format nil (formatter "fo-~<test~0,4:@ta~:>") nil) "fo-testa")
+  ((pxp::format nil (formatter "fo-~<test~:@ta~:>") nil) "fo-test a")
+  ((pxp::format nil (formatter "fo-~<test~8:@ta~:>") nil) "fo-test        a")
+  ((pxp::format nil (formatter "fo-~<test~8,3:@ta~:>") nil) "fo-test        a")
+  ((pxp::format nil (formatter "fo-~<test~8,5:@ta~:>") nil) "fo-test           a")
+  ((pxp::format nil (formatter "fo-~<test~0,3:@ta~:>") nil) "fo-test  a")
+  ((pxp::format nil (formatter "fo-~<test~0,4:@ta~:>") nil) "fo-testa")
 
-  ((xp::format nil (formatter "fo-~<test~6,4ta~:>") nil) "fo-test   a")
-  ((xp::format nil (formatter "fo-~<test~6,3ta~:>") nil) "fo-test  a")
+  ((pxp::format nil (formatter "fo-~<test~6,4ta~:>") nil) "fo-test   a")
+  ((pxp::format nil (formatter "fo-~<test~6,3ta~:>") nil) "fo-test  a")
 
 ;The following test the special pretty printing directives.
 
   ;first two tests disabled, should actually be errors.
-  ((null nil) t) ;((plet 20 0 (xp::format nil (formatter "--~@<~a~a~:>-~a") 1 2 3 4 5)) "--12-NIL")
-  ((null nil) t) ;((plet 20 0 (xp::format nil (formatter "~<--~@<~a~a~:>-~a~:>") '(1 2 3 4 5))) "--12-NIL")
-  ((plet 20 0 (xp::format nil (formatter "~<~@{~A~^ ~}~:>") '(1 2 . 3))) "1 2 . 3")
+  ((null nil) t) ;((plet 20 0 (pxp::format nil (formatter "--~@<~a~a~:>-~a") 1 2 3 4 5)) "--12-NIL")
+  ((null nil) t) ;((plet 20 0 (pxp::format nil (formatter "~<--~@<~a~a~:>-~a~:>") '(1 2 3 4 5))) "--12-NIL")
+  ((plet 20 0 (pxp::format nil (formatter "~<~@{~A~^ ~}~:>") '(1 2 . 3))) "1 2 . 3")
 
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~ta~:>") nil)) "test a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~8ta~:>") nil)) "test    a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~8,3ta~:>") nil)) "test    a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~0,3ta~:>") nil)) "test  a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~0,4ta~:>") nil)) "test    a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~0,5ta~:>") nil)) "test a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~ta~:>") nil)) "test a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~8ta~:>") nil)) "test    a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~8,3ta~:>") nil)) "test    a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~0,3ta~:>") nil)) "test  a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~0,4ta~:>") nil)) "test    a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~0,5ta~:>") nil)) "test a")
 
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~@ta~:>") nil)) "test a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~8@ta~:>") nil)) "test        a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~8,3@ta~:>") nil)) "test        a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~8,5@ta~:>") nil)) "test           a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~0,3@ta~:>") nil)) "test  a")
-  ((plet 20 0 (xp::format nil (formatter "tes~<t~0,4@ta~:>") nil)) "testa")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~@ta~:>") nil)) "test a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~8@ta~:>") nil)) "test        a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~8,3@ta~:>") nil)) "test        a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~8,5@ta~:>") nil)) "test           a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~0,3@ta~:>") nil)) "test  a")
+  ((plet 20 0 (pxp::format nil (formatter "tes~<t~0,4@ta~:>") nil)) "testa")
 
-  ((plet 20 0 (xp::format nil (formatter "~a~<~a~*~a~:>~a") 1 '(2 3 4 5 6 7) 0)) "1240")
-  ((plet 20 0 (xp::format nil (formatter "~a~<~a~0@*~a~:>~a") 1 '(2 3 4 5 6 7) 0)) "1220")
-  ((plet 20 0 (xp::format nil (formatter "~a~@<~a~*~a~:>") 1 2 3 4 5 6 7)) "124")
-  ((plet 20 0 (xp::format nil (formatter "~a~@<~a~0@*~a~:>") 1 2 3 4 5 6 7)) "122")
+  ((plet 20 0 (pxp::format nil (formatter "~a~<~a~*~a~:>~a") 1 '(2 3 4 5 6 7) 0)) "1240")
+  ((plet 20 0 (pxp::format nil (formatter "~a~<~a~0@*~a~:>~a") 1 '(2 3 4 5 6 7) 0)) "1220")
+  ((plet 20 0 (pxp::format nil (formatter "~a~@<~a~*~a~:>") 1 2 3 4 5 6 7)) "124")
+  ((plet 20 0 (pxp::format nil (formatter "~a~@<~a~0@*~a~:>") 1 2 3 4 5 6 7)) "122")
 
-  ((plet 20 0 (xp::format nil (formatter "~a~<~a~^~a~:>~a") 1 '(2) 0)) "120")
-  ((plet 20 0 (xp::format nil (formatter "~a~<~a~^~a~:>~a") 1 '(2) 0)) "120")
-  ((plet 20 0 (xp::format nil (formatter "~a~@<~a~#,4^~a~:>") 1 2 3 4 5 6)) "12")
+  ((plet 20 0 (pxp::format nil (formatter "~a~<~a~^~a~:>~a") 1 '(2) 0)) "120")
+  ((plet 20 0 (pxp::format nil (formatter "~a~<~a~^~a~:>~a") 1 '(2) 0)) "120")
+  ((plet 20 0 (pxp::format nil (formatter "~a~@<~a~#,4^~a~:>") 1 2 3 4 5 6)) "12")
   ((plet 16 0
      (let ((*print-length* 2))
-       (xp::format nil (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789))))
    "---12 3456 ...--")
   ((plet 16 0
      (let ((*print-length* 1))
-       (xp::format nil (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789))))
    "---12 ...--")
   ((plet 16 0
      (with-output-to-string (s)
        (let ((*print-length* 1))
-	 (xp::format s (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789)))
+	 (pxp::format s (formatter "---~<~a~^ ~a~^ ~a~:>--") '(12 3456 789)))
        (princ " " s)
        (funcall *last-abbreviated-printing*)))
    "---12 ...-- ---12 3456 789--")
 
   ((plet 16 0
      (let ((*print-length* 2))
-       (xp::format nil (formatter "---~@<~a~^ ~a~^ ~a~:>--") 12 3456 789)))
+       (pxp::format nil (formatter "---~@<~a~^ ~a~^ ~a~:>--") 12 3456 789)))
    "---12 3456 ...--")
   ((plet 16 0
      (let ((*print-length* 2))
-       (xp::format nil (formatter "---~:@<~a~^ ~a~^ ~a~:>--") 12 3456 789)))
+       (pxp::format nil (formatter "---~:@<~a~^ ~a~^ ~a~:>--") 12 3456 789)))
    "---(12 3456 ...)--")
   ((plet 16 0
      (let ((*print-length* 2))
-       (xp::format nil (formatter "---~:@<~a~^ ~a~^ ~a~:>~A--") 12 3456 789)))
+       (pxp::format nil (formatter "---~:@<~a~^ ~a~^ ~a~:>~A--") 12 3456 789)))
    "---(12 3456 ...)NIL--")
 
-  ((plet 20 0 (xp::format nil (formatter "test~<a~2%  test~:>b") nil)) "testa
+  ((plet 20 0 (pxp::format nil (formatter "test~<a~2%  test~:>b") nil)) "testa
 
   testb")
-  ((plet 20 0 (xp::format nil (formatter "test~<a
+  ((plet 20 0 (pxp::format nil (formatter "test~<a
   test~:>b") nil)) "testa
   testb")
 
-  ((plet 20 0 (xp::format nil (formatter "test~<a~&  test~:>b") nil)) "testa
+  ((plet 20 0 (pxp::format nil (formatter "test~<a~&  test~:>b") nil)) "testa
   testb")
 
-  ((plet 20 0 (xp::format nil (formatter "~a~:@<~:>") 1 2 4 5)) "1()")
-  ((plet 20 0 (xp::format nil (formatter "~a~:@<~a~a~:>") 1 2 4 5)) "1(24)")
-  ((plet 20 0 (xp::format nil (formatter "~a~@<+~;~a~a~:>") 1 2 4 5)) "1+24")
-  ((plet 20 0 (xp::format nil (formatter "~a~:@<+~;~a~a~:>") 1 2 4 5)) "1+24)")
-  ((plet 20 0 (xp::format nil (formatter "~a~@<+(~;~a~a~;)*~:>") 1 2 4 5)) "1+(24)*")
-  ((plet 20 0 (xp::format nil (formatter "~a~:@<+~;~a~a~;*~:>") 1 2 4 5)) "1+24*")
+  ((plet 20 0 (pxp::format nil (formatter "~a~:@<~:>") 1 2 4 5)) "1()")
+  ((plet 20 0 (pxp::format nil (formatter "~a~:@<~a~a~:>") 1 2 4 5)) "1(24)")
+  ((plet 20 0 (pxp::format nil (formatter "~a~@<+~;~a~a~:>") 1 2 4 5)) "1+24")
+  ((plet 20 0 (pxp::format nil (formatter "~a~:@<+~;~a~a~:>") 1 2 4 5)) "1+24)")
+  ((plet 20 0 (pxp::format nil (formatter "~a~@<+(~;~a~a~;)*~:>") 1 2 4 5)) "1+(24)*")
+  ((plet 20 0 (pxp::format nil (formatter "~a~:@<+~;~a~a~;*~:>") 1 2 4 5)) "1+24*")
    
   ((plet 50 0
-     (xp::format nil (formatter "foo ~@<++~@;1~:@_2~:@_3~:>4")))
+     (pxp::format nil (formatter "foo ~@<++~@;1~:@_2~:@_3~:>4")))
    "foo ++1
     ++2
     ++34")
   ((plet 50 0
-     (xp::format nil (formatter "foo ~@<++~@;1~:@_ hi ~@<##~@;1~:@_2~:@_3~:>~:@_3~:>4")))
+     (pxp::format nil (formatter "foo ~@<++~@;1~:@_ hi ~@<##~@;1~:@_2~:@_3~:>~:@_3~:>4")))
    "foo ++1
     ++ hi ##1
     ++    ##2
     ++    ##3
     ++34")
   ((plet 50 0
-     (xp::format nil (formatter "foo ~@<++~@;1~:@_2 ~S~:@_3~:>4") "testing
+     (pxp::format nil (formatter "foo ~@<++~@;1~:@_2 ~S~:@_3~:>4") "testing
 linebreaks"))
 "foo ++1
     ++2 \"testing
     ++linebreaks\"
     ++34")
 
-  ((plet 18 0 (xp::format nil (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 18 0 (pxp::format nil (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
    "---(12 3456 789)--")
-  ((plet 17 0 (xp::format nil (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 17 0 (pxp::format nil (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
    "---(12
     3456
     789)--")
-  ((plet 13 0 (xp::format nil (formatter "---~{~a ~_~a~2I ~_~a~}--") '(12 3456 789)))
+  ((plet 13 0 (pxp::format nil (formatter "---~{~a ~_~a~2I ~_~a~}--") '(12 3456 789)))
    "---12
 3456
   789--")
-  ((plet 17 0 (xp::format nil (formatter "---~<<~;~a ~_~a ~_~a~;>~:>--") '(12 3456 789)))
+  ((plet 17 0 (pxp::format nil (formatter "---~<<~;~a ~_~a ~_~a~;>~:>--") '(12 3456 789)))
    "---<12
     3456
     789>--")
-  ((plet 17 0 (xp::format nil (formatter "---~<<~@;~a ~_~a ~_~a~;>~:>--") '(12 3456 789)))
+  ((plet 17 0 (pxp::format nil (formatter "---~<<~@;~a ~_~a ~_~a~;>~:>--") '(12 3456 789)))
    "---<12
    <3456
    <789>--")
-  ((plet 16 0 (xp::format nil (formatter "---~<<~@;~a ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 16 0 (pxp::format nil (formatter "---~<<~@;~a ~_~a ~_~a~:>--") '(12 3456 789)))
    "---<12
    <3456
    <789--")
 
   ((plet 15 0
-     (xp::format nil (formatter "---~<12	3456 789~:@>--") nil)) ;note tab after "12"
+     (pxp::format nil (formatter "---~<12	3456 789~:@>--") nil)) ;note tab after "12"
    "---12	3456
    789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a ~a ~a~:@>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a ~a ~a~:@>--") '(12 3456 789)))
    "---12 3456
    789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a ~@{~a ~a~}~:@>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a ~@{~a ~a~}~:@>--") '(12 3456 789)))
    "---12
    3456 789--")
-  ((plet 25 0 (xp::format nil (formatter "---~<~a	~a-~a~@:>--") '(12 3456 789))) ;note tab char
+  ((plet 25 0 (pxp::format nil (formatter "---~<~a	~a-~a~@:>--") '(12 3456 789))) ;note tab char
    "---12	3456-789--")
 
   ((plet 15 0
      (let ((*print-level* 3))
-       (xp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
+       (pxp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
    "0(1(2(3)))")
   ((plet 15 0
      (let ((*print-level* 2))
-       (xp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
+       (pxp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
    "0(1(2#))")
   ((plet 15 0
      (let ((*print-level* 1))
-       (xp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
+       (pxp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
    "0(1#)")  
   ((plet 15 0
      (let ((*print-level* 0))
-       (xp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
+       (pxp::format nil (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
    "0#")
   ((plet 15 0
      (with-output-to-string (s)
        (let ((*print-level* 1))
-	 (xp::format s (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>")))
-       (xp::format s " ")
-       (xp::format s (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
+	 (pxp::format s (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>")))
+       (pxp::format s " ")
+       (pxp::format s (formatter "0~:@<1~:@<2~:@<3~:>~:>~:>"))))
    "0(1#) 0(1(2(3)))")
   ((plet 50 0
      (let ((*print-level* 1))
-       (xp::format nil (formatter "~:<~W~:@<~W~:>~:>") '(0 1 2 3 4))))
+       (pxp::format nil (formatter "~:<~W~:@<~W~:>~:>") '(0 1 2 3 4))))
    "(0#)")
 
-  ((plet 16 0 (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 16 0 (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12 3456 789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
 
-  ((plet 16 0 (xp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 16 0 (pxp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
    "---12 3456 789--")
-  ((plet 11 0 (xp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 11 0 (pxp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
    "---12 3456
    789--")
-  ((plet 10 0 (xp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 10 0 (pxp::format nil (formatter "---~<~a ~:_~a ~:_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
-  ((plet 50 0 (xp::format nil (formatter "---~<~a ~<<<~:@_>>~:>~:_~a~:>--") '(12 () 789)))
+  ((plet 50 0 (pxp::format nil (formatter "---~<~a ~<<<~:@_>>~:>~:_~a~:>--") '(12 () 789)))
    "---12 <<
       >>
    789--")
-  ((plet 50 0 (xp::format nil (formatter "---~<~a ~:_~<<<~:@_>>~:>~:_~a~:>--")
+  ((plet 50 0 (pxp::format nil (formatter "---~<~a ~:_~<<<~:@_>>~:>~:_~a~:>--")
 		       '(12 () 789)))
    "---12
    <<
    >>
    789--")
 
-  ((plet 16 0 (xp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 16 0 (pxp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12 3456 789--")
-  ((plet 11 0 (xp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 11 0 (pxp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12 3456
    789--")
-  ((plet 11 nil (xp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 11 nil (pxp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12 3456
    789--")
-  ((plet 11 20 (xp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 11 20 (pxp::format nil (formatter "---~<~a ~@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
 
-  ((plet 25 0 (xp::format nil (formatter "---~<~a ~:@_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 25 0 (pxp::format nil (formatter "---~<~a ~:@_~a ~_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
-  ((plet 13 0 (xp::format nil (formatter "---~<~a ~:@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 13 0 (pxp::format nil (formatter "---~<~a ~:@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12
    3456 789--")
-  ((plet 12 0 (xp::format nil (formatter "---~<~a ~:@_~a ~:_~a~:>--") '(12 3456 789)))
+  ((plet 12 0 (pxp::format nil (formatter "---~<~a ~:@_~a ~:_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
 
-  ((plet 15 0 (xp::format nil (formatter "---~<~a~1I ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a~1I ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12
     3456
     789--")
- ((plet 15 0 (xp::format nil (formatter "---~<~a~-2I ~_~a ~_~a~:>--") '(12 3456 789)))
+ ((plet 15 0 (pxp::format nil (formatter "---~<~a~-2I ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12
  3456
  789--")
- ((plet 15 0 (xp::format nil (formatter "---~<~a~VI ~_~a ~_~a~:>--") '(12 -2 3456 789)))
+ ((plet 15 0 (pxp::format nil (formatter "---~<~a~VI ~_~a ~_~a~:>--") '(12 -2 3456 789)))
    "---12
  3456
  789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a~:I ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a~:I ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12
      3456
      789--")
-  ((plet 15 20 (xp::format nil (formatter "---~<~a~:I ~_~a ~_~a~:>--") '(12 3456 789)))
+  ((plet 15 20 (pxp::format nil (formatter "---~<~a~:I ~_~a ~_~a~:>--") '(12 3456 789)))
    "---12
    3456
    789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a ~_~a~-1:I ~_~a~:>--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a ~_~a~-1:I ~_~a~:>--") '(12 3456 789)))
    "---12
    3456
       789--")
-  ((plet 15 0 (xp::format nil (formatter "---~<~a ~_~a~V:I ~_~a~:>--") '(12 3456 -1 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~<~a ~_~a~V:I ~_~a~:>--") '(12 3456 -1 789)))
    "---12
    3456
       789--")
 
   ((plet 16 0
      (let ((*print-length* 3))
-       (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
    "---12 3456 789--")
 
   ((plet 15 0
      (let ((*print-lines* 3))
-       (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
    "---12
    3456
    789--")
   ((plet 15 0
      (let ((*print-lines* 2))
-       (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
    "---12
    3456 ..")
   ((plet 15 0
      (let ((*print-lines* 1))
-       (xp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
+       (pxp::format nil (formatter "---~<~a ~_~a ~_~a~:>--") '(12 3456 789))))
    "---12 ..")
   ((plet 15 0
      (with-output-to-string (s)
        (let ((*print-lines* 1))
-	 (xp::format s (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
+	 (pxp::format s (formatter "---~:<~a ~_~a ~_~a~:>--") '(12 3456 789)))
        (terpri s)
        (funcall *last-abbreviated-printing*)))
    "---(12 ..)
@@ -786,98 +786,98 @@ linebreaks"))
     3456
     789)--")
 
-  ((plet 15 0 (xp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789)))
    "---12 3456
    789--")
-  ((plet 15 0 (xp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789)))
    "---(12 3456
     789)--")
-  ((plet 15 0 (xp::format nil (formatter "---~:/pprint-fill/--") '12))
+  ((plet 15 0 (pxp::format nil (formatter "---~:/pprint-fill/--") '12))
    "---12--")
   ((plet 15 0 (let ((*print-level* 4) (*print-length* 2))
-		(xp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789))))
    "---(12 3456
     ...)--")
   ((plet 25 0 (let ((*print-level* 4) (*print-length* 2))
-		(xp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789))))
    "---12 3456 ...--")
   ((plet 15 0 (let ((*print-level* 0))
-		(xp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~:/pprint-fill/--") '(12 3456 789))))
    "---#--")
   ((plet 15 0 (let ((*print-level* 0))
-		(xp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~/pprint-fill/--") '(12 3456 789))))
    "---#--")
 
-  ((plet 15 0 (xp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789)))
    "---12
    3456
    789--")
-  ((plet 15 0 (xp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789)))
+  ((plet 15 0 (pxp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789)))
    "---(12
     3456
     789)--")
-  ((plet 15 0 (xp::format nil (formatter "---~:/pprint-linear/--") '12))
+  ((plet 15 0 (pxp::format nil (formatter "---~:/pprint-linear/--") '12))
    "---12--")
   ((plet 15 0 (let ((*print-level* 4) (*print-length* 2))
-		(xp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789))))
    "---(12
     3456
     ...)--")
   ((plet 25 0 (let ((*print-level* 4) (*print-length* 2))
-		(xp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789))))
    "---12 3456 ...--")
   ((plet 15 0 (let ((*print-level* 0))
-		(xp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~:/pprint-linear/--") '(12 3456 789))))
    "---#--")
   ((plet 15 0 (let ((*print-level* 0))
-		(xp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789))))
+		(pxp::format nil (formatter "---~/pprint-linear/--") '(12 3456 789))))
    "---#--")
 
-  ((plet 100 0 (xp::format nil (formatter "---~5/pprint-tabular/--")
+  ((plet 100 0 (pxp::format nil (formatter "---~5/pprint-tabular/--")
 		       '(12 3456 789 22 45656 78)))
    "---12   3456 789  22   45656     78--")
-  ((plet 100 0 (xp::format nil (formatter "---~5/pprint-tabular/--")
+  ((plet 100 0 (pxp::format nil (formatter "---~5/pprint-tabular/--")
 		       '(12+++ 3456 789 22 45656 78)))
    "---12+++     3456 789  22   45656     78--")
   ((plet 100 0
      (let ((*print-length* 3))
-       (xp::format nil (formatter "---~5/pprint-tabular/--")
+       (pxp::format nil (formatter "---~5/pprint-tabular/--")
 		  '(12 3456 789 22 456 78))))
    "---12   3456 789  ...--")
-  ((plet 21 0 (xp::format nil (formatter "---~5/pprint-tabular/--")
+  ((plet 21 0 (pxp::format nil (formatter "---~5/pprint-tabular/--")
 		       '(12 3456 789 22 456 78)))
    "---12   3456 789
    22   456  78--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/pprint-tabular/--")
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/pprint-tabular/--")
 		       '(12 3456 789 22 456 78)))
    "---(12   3456 789
     22   456  78)--")
   ((plet 100 0
      (let ((*print-length* 3))
-       (xp::format nil (formatter "---~5:/pprint-tabular/--")
+       (pxp::format nil (formatter "---~5:/pprint-tabular/--")
 		  '(12 3456 789 22 456 78))))
    "---(12   3456 789  ...)--")
-  ((plet 41 0 (xp::format nil (formatter "---~V/pprint-tabular/--")
+  ((plet 41 0 (pxp::format nil (formatter "---~V/pprint-tabular/--")
 		       nil '(12 3456 789 22 456 78)))
    "---12              3456
    789             22
    456             78--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/pprint-tabular/--") ()))
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/pprint-tabular/--") ()))
    "---()--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/pprint-tabular/--") 12))
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/pprint-tabular/--") 12))
    "---12--")
-  ((plet 21 0 (let ((*print-level* 0)) (xp::format nil (formatter "---~5/pprint-tabular/--") ())))
+  ((plet 21 0 (let ((*print-level* 0)) (pxp::format nil (formatter "---~5/pprint-tabular/--") ())))
    "---#--")
-  ((plet 21 0 (let ((*print-level* 0)) (xp::format nil (formatter "---~5:/pprint-tabular/--") ())))
+  ((plet 21 0 (let ((*print-level* 0)) (pxp::format nil (formatter "---~5:/pprint-tabular/--") ())))
    "---#--")
 
   ((plet 90 0
      (let ((*print-escape* nil))
-       (xp::format nil (formatter "~W") "foo")))
+       (pxp::format nil (formatter "~W") "foo")))
    "foo")
   ((plet 90 0
      (let ((*print-escape* T))
-       (xp::format nil (formatter "~W") "foo")))
+       (pxp::format nil (formatter "~W") "foo")))
    "\"foo\"")
 
   ((plet 10 0
@@ -885,16 +885,16 @@ linebreaks"))
        (prints '#(12 3456 789 22 456 78)))))
   ((plet 15 0
      (let ((*print-length* 5))
-       (xp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
+       (pxp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
    "#(12 3456 789
   22 456 ...)")
   ((plet 15 0
      (let ((*print-length* 0))
-       (xp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
+       (pxp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
    "#(...)")
   ((plet 15 0
      (let ((*print-level* 0))
-       (xp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
+       (pxp::format nil (formatter "~W") '#(12 3456 789 22 456 78))))
    "#")
   ((plet 10 0
      (let ((*print-pretty* nil)) (prints '#()))))
@@ -902,53 +902,53 @@ linebreaks"))
   ((plet 10 0
      (let ((*print-pretty* nil))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
+	 (pxp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
    "#2A((12 3456 789) (22 456 78))")
   ((plet 20 0
      (let ((*print-pretty* T))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
+	 (pxp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
    "#2A((12 3456 789)
     (22 456 78))")
   ((plet 17 0
      (let ((*print-pretty* T))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
+	 (pxp::format nil (formatter "~W") '#2A((12 3456 789) (22 456 78))))))
    "#2A((12 3456
      789)
     (22 456 78))")
   ((plet 10 0
      (let ((*print-pretty* T))
-       (xp::format nil (formatter "~W") '#0Afoo)))
+       (pxp::format nil (formatter "~W") '#0Afoo)))
    "#0A FOO")
   ((plet 30 0
      (let ((*print-pretty* T))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
+	 (pxp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
 					       ((1 22) (1 456) (1 78)))))))
    "#3A(((1 12) (1 3456) (1 789))
     ((1 22) (1 456) (1 78)))")
   ((plet 30 0
      (let ((*print-pretty* T))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A((() ()) (() ()))))))
+	 (pxp::format nil (formatter "~W") '#3A((() ()) (() ()))))))
    "#3A((() ()) (() ()))")
   ((plet 30 0
      (let ((*print-pretty* T) (*print-level* 2))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
+	 (pxp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
 					       ((1 22) (1 456) (1 78)))))))
    "#3A((# # #) (# # #))")
   ((plet 30 0
      (let ((*print-pretty* T) (*print-level* 0))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
+	 (pxp::format nil (formatter "~W") '#3A(((1 12) (1 3456) (1 789))
 					       ((1 22) (1 456) (1 78)))))))
    "#")
   ((plet 30 0
      (let ((*print-pretty* T) (*print-length* 4))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A(((1 12 1 1 1 1) (1 3456 1 1 1 1))
+	 (pxp::format nil (formatter "~W") '#3A(((1 12 1 1 1 1) (1 3456 1 1 1 1))
 					       ((1 22 1 1 1 1) (1 456 1 1 1 1)))))))
      "#3A(((1 12 1 1 ...)
      (1 3456 1 1 ...))
@@ -957,94 +957,94 @@ linebreaks"))
   ((plet 30 0
      (let ((*print-pretty* T) (*print-length* 0))
        (string-upcase
-	 (xp::format nil (formatter "~W") '#3A(((1 12 1 1 1 1) (1 3456 1 1 1 1))
+	 (pxp::format nil (formatter "~W") '#3A(((1 12 1 1 1 1) (1 3456 1 1 1 1))
 					       ((1 22 1 1 1 1) (1 456 1 1 1 1)))))))
      "#3A(...)")
 
   (test-def ((defun foo (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (flet ((foo (xp obj colon atsign &optional (n 3))
 		      (declare (ignore colon atsign n))
-		      (xp::format xp (formatter "~A") obj)))
+		      (pxp::format xp (formatter "~A") obj)))
 	       (plet 20 0
 		 (list (with-output-to-string (s)
 			 (foo s '(1 2 3 4) nil nil))
-		       (xp::format nil (formatter "-~/foo/-") '(1 2 3 4))))))
+		       (pxp::format nil (formatter "-~/foo/-") '(1 2 3 4))))))
 	    ("(1 2 3 4)" "-123-"))
   (test-def ((defun foo1 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (xp::format nil (formatter "-~4/foo1/-") '(1 2 3 4)))) "-1234-")
+	       (pxp::format nil (formatter "-~4/foo1/-") '(1 2 3 4)))) "-1234-")
   (test-def ((defun foo2 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (xp::format nil (formatter "-~#/foo2/-") '(1 2 3 4)))) "-1-")
+	       (pxp::format nil (formatter "-~#/foo2/-") '(1 2 3 4)))) "-1-")
   (test-def ((defun foo3 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (xp::format nil (formatter "-~V/foo3/-") 2 '(1 2 3 4)))) "-12-")
+	       (pxp::format nil (formatter "-~V/foo3/-") 2 '(1 2 3 4)))) "-12-")
   (test-def ((defun foo4 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (xp::format nil (formatter "-~:@/foo4/-") '(1 2 3 4)))) "-@:1-")
+	       (pxp::format nil (formatter "-~:@/foo4/-") '(1 2 3 4)))) "-@:1-")
   (test-def ((defun foo5 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (let ((*package* (find-package "XP")))
-		 (xp::format nil (formatter "-~/foo5/-") '(1 2 3 4))))) "-123-")
+	       (let ((*package* (find-package :pxp)))
+		 (pxp::format nil (formatter "-~/foo5/-") '(1 2 3 4))))) "-123-")
   (test-def ((defun foo6 (xp obj colon atsign &optional (n 3))
 	       (if colon (push ":" obj))
 	       (if atsign (push "@" obj))
-	       (xp::format xp (formatter "~V{~A~}") n obj))
+	       (pxp::format xp (formatter "~V{~A~}") n obj))
 	     (plet 20 0
-	       (let ((*package* (find-package "XP")))
-		 (xp::format nil (formatter "-~/xp-test::foo6/-") '(1 2 3 4))))) "-123-")
+	       (let ((*package* (find-package :pxp)))
+		 (pxp::format nil (formatter "-~/xp-test::foo6/-") '(1 2 3 4))))) "-123-")
   (test-def ((defun bar (xp &rest objects)
-	       (xp::format xp (formatter "~{~A~}") objects))
+	       (pxp::format xp (formatter "~{~A~}") objects))
 	     (plet 20 0
-	       (xp::format nil (formatter "-~?-") #'bar '(1 2 3 4)))) "-1234-")
+	       (pxp::format nil (formatter "-~?-") #'bar '(1 2 3 4)))) "-1234-")
 
 ;tests of xp's special printing functions.
 
   ((let ((s (make-array 20 :element-type 'character :fill-pointer 0)))
-     (list (xp::format s (formatter "test~A ") "ing")
-	   (xp::format s (formatter "test~A ") "ing")
+     (list (pxp::format s (formatter "test~A ") "ing")
+	   (pxp::format s (formatter "test~A ") "ing")
 	   s))
    (nil nil "testing testing "))
   ((plet 10 0
      (let ((*print-pretty* nil) x)
       (list
        (with-output-to-string (s)
-	 (setq x (xp::write '(setq a 8 c "2") :stream s :base 8 :lines 4)))
+	 (setq x (pxp::write '(setq a 8 c "2") :stream s :base 8 :lines 4)))
        x)))
    ("(SETQ A 10 C \"2\")" (setq a 8 c "2")))
   ((plet 10 0
      (let ((*print-pretty* nil))
        (with-output-to-string (s)
-	 (xp::write '(setq a 8 c "2") :stream s :escape nil :pretty T))))
+	 (pxp::write '(setq a 8 c "2") :stream s :escape nil :pretty T))))
    "(SETQ A 8
       C 2)")
   (test-def ((defun bar1 (xp list &rest stuff) (declare (ignore stuff))
-		    (xp::write list :stream xp :length 4 :pretty nil))
+		    (pxp::write list :stream xp :length 4 :pretty nil))
 	     (plet 10 0
-	       (xp::format nil (formatter "-~/bar1/-") '(setq a 8 c "2"))))
+	       (pxp::format nil (formatter "-~/bar1/-") '(setq a 8 c "2"))))
 	    "-(SETQ A 8 C ...)-")
   (test-def ((defun bar2 (xp list &rest stuff) (declare (ignore stuff))
-		    (xp::write list :stream xp :length 4))
+		    (pxp::write list :stream xp :length 4))
 	     (plet 14 0
-	       (xp::format nil (formatter "-~/bar2/-") '(setq a 8 c "2"))))
+	       (pxp::format nil (formatter "-~/bar2/-") '(setq a 8 c "2"))))
 	    "-(SETQ A 8
        C ...)-")
 
@@ -1053,19 +1053,19 @@ linebreaks"))
       (cons
        (with-output-to-string (s)
 	(setq x (list
-	 (xp::prin1 "2" s)
-	 (xp::fresh-line s)
-	 (xp::write-line "This is a test" s :start 2)
-	 (xp::terpri s)
-	 (xp::write-string "This is a test" s :end 7)
-	 (multiple-value-list (xp::pprint '(setq a b c d) s)) 
-         (xp::write-string "more
+	 (pxp::prin1 "2" s)
+	 (pxp::fresh-line s)
+	 (pxp::write-line "This is a test" s :start 2)
+	 (pxp::terpri s)
+	 (pxp::write-string "This is a test" s :end 7)
+	 (multiple-value-list (pxp::pprint '(setq a b c d) s)) 
+         (pxp::write-string "more
 tests" s)
-	 (xp::print "2" s)
-	 (xp::write-char #\a s)
-	 (xp::write-char #\newline s)
-	 (xp::fresh-line s)
-	 (xp::princ "2" s))))
+	 (pxp::print "2" s)
+	 (pxp::write-char #\a s)
+	 (pxp::write-char #\newline s)
+	 (pxp::fresh-line s)
+	 (pxp::princ "2" s))))
        x)))
    ("\"2\"
 is is a test
@@ -1084,19 +1084,19 @@ tests" "2" #\a #\newline nil "2"))
       (cons
        (with-output-to-string (s)
 	(setq x (list
-	 (xp::prin1 "2" s)
-	 (xp::fresh-line s)
-	 (xp::write-line "This is a test" s :start 2)
-	 (xp::terpri s)
-	 (xp::write-string "This is a test" s :end 7)
-	 (multiple-value-list (xp::pprint '(setq a b c d) s)) 
-         (xp::write-string "more
+	 (pxp::prin1 "2" s)
+	 (pxp::fresh-line s)
+	 (pxp::write-line "This is a test" s :start 2)
+	 (pxp::terpri s)
+	 (pxp::write-string "This is a test" s :end 7)
+	 (multiple-value-list (pxp::pprint '(setq a b c d) s)) 
+         (pxp::write-string "more
 tests" s)
-	 (xp::print "2" s)
-	 (xp::write-char #\a s)
-	 (xp::write-char #\newline s)
-	 (xp::fresh-line s)
-	 (xp::princ "2" s))))
+	 (pxp::print "2" s)
+	 (pxp::write-char #\a s)
+	 (pxp::write-char #\newline s)
+	 (pxp::fresh-line s)
+	 (pxp::princ "2" s))))
        x)))
    ("\"2\"
 is is a test
@@ -1112,21 +1112,21 @@ tests" "2" #\a #\newline nil "2"))
 
   (test-def ((defun bar3 (s item &rest stuff)
 	       (declare (ignore stuff))
-	       (xp::prin1 (copy-seq item) s)
-	       (xp::fresh-line s)
-	       (xp::write-line "This is a test" s :start 2)
-	       (xp::terpri s)
-	       (xp::write-string "This is a test" s :end 7)
-	       (xp::pprint '(setq a b c d) s)
-	       (xp::write-string "more
+	       (pxp::prin1 (copy-seq item) s)
+	       (pxp::fresh-line s)
+	       (pxp::write-line "This is a test" s :start 2)
+	       (pxp::terpri s)
+	       (pxp::write-string "This is a test" s :end 7)
+	       (pxp::pprint '(setq a b c d) s)
+	       (pxp::write-string "more
 tests" s)
-	       (xp::print (copy-seq item) s)
-	       (xp::write-char #\a s)
-	       (xp::write-char #\newline s)
-	       (xp::fresh-line s)
-	       (xp::princ (copy-seq item) s))
+	       (pxp::print (copy-seq item) s)
+	       (pxp::write-char #\a s)
+	       (pxp::write-char #\newline s)
+	       (pxp::fresh-line s)
+	       (pxp::princ (copy-seq item) s))
 	     (plet 14 0
-	       (xp::format nil (formatter "-~/bar3/-") "2")))
+	       (pxp::format nil (formatter "-~/bar3/-") "2")))
 	    "-\"2\"
 is is a test
 
@@ -1138,74 +1138,74 @@ tests
 2-")
   ((null nil) t)
 
-  ((plet 14 0 (progn (setq xp::*format-string-cache* T) (xp::format nil "~A" 4))) "4")
-  ((plet 14 0 (xp::format nil "~10<foo~>" 4)) "       foo")
-  ((plet 14 0 (xp::format nil "~@<foo~:>" 4)) "foo")
-  ((plet 14 0 (xp::format nil "~@<foo~:@>" 4)) "foo")
-  ((plet 14 0 (xp::format nil "~w" 4)) "4")
+  ((plet 14 0 (progn (setq pxp::*format-string-cache* T) (pxp::format nil "~A" 4))) "4")
+  ((plet 14 0 (pxp::format nil "~10<foo~>" 4)) "       foo")
+  ((plet 14 0 (pxp::format nil "~@<foo~:>" 4)) "foo")
+  ((plet 14 0 (pxp::format nil "~@<foo~:@>" 4)) "foo")
+  ((plet 14 0 (pxp::format nil "~w" 4)) "4")
   ((plet 14 0
-     (let ((xp::*format-string-cache* nil))
-       (xp::format nil "~w" 4))) "4")
+     (let ((pxp::*format-string-cache* nil))
+       (pxp::format nil "~w" 4))) "4")
   ((plet 14 0
      (let ((string "~W"))
-       (list (xp::format nil string 4) (xp::format nil string 5)))) ("4" "5"))
+       (list (pxp::format nil string 4) (pxp::format nil string 5)))) ("4" "5"))
   ((plet 20 0
      (flet ((bar (xp &rest objects)
-	      (xp::format xp "~{~A~}" objects)))
-       (xp::format nil (formatter "-~?-") #'bar '(1 2 3 4)))) "-1234-")
+	      (pxp::format xp "~{~A~}" objects)))
+       (pxp::format nil (formatter "-~?-") #'bar '(1 2 3 4)))) "-1234-")
 
-  ((with-output-to-string (*standard-output*) (xp::prin1 44)) "44")
-  ((with-output-to-string (*standard-output*) (xp::prin1 44 nil)) "44")
-  ((with-output-to-string (*terminal-io*) (xp::prin1 44 T)) "44")
+  ((with-output-to-string (*standard-output*) (pxp::prin1 44)) "44")
+  ((with-output-to-string (*standard-output*) (pxp::prin1 44 nil)) "44")
+  ((with-output-to-string (*terminal-io*) (pxp::prin1 44 T)) "44")
 
-  ((plet 100 0 (xp::princ-to-string '(setq a "2" b 8))) "(SETQ A 2 B 8)")
+  ((plet 100 0 (pxp::princ-to-string '(setq a "2" b 8))) "(SETQ A 2 B 8)")
   ((plet 100 0
      (let ((*print-pretty* nil))
-       (xp::prin1-to-string '(setq a "2" b 8)))) "(SETQ A \"2\" B 8)")
-  ((plet 100 0 (xp::write-to-string '(setq a "2" b 8) :base 8 :right-margin 13))
+       (pxp::prin1-to-string '(setq a "2" b 8)))) "(SETQ A \"2\" B 8)")
+  ((plet 100 0 (pxp::write-to-string '(setq a "2" b 8) :base 8 :right-margin 13))
    "(SETQ A \"2\"
       B 10)")
 
   (deftest
-    (progn (xp::defstruct foo (a 1) (b 2))
-	   (plet 10 0 (xp::prin1-to-string (make-foo))))
+    (progn (pxp::defstruct foo (a 1) (b 2))
+	   (plet 10 0 (pxp::prin1-to-string (make-foo))))
    "#S(FOO :A 1
        :B 2)")
   (deftest
-    (progn (xp::defstruct (foo00 (:conc-name nil)) (a 1) (b 2))
-	   (plet 10 0 (xp::prin1-to-string (make-foo00))))
+    (progn (pxp::defstruct (foo00 (:conc-name nil)) (a 1) (b 2))
+	   (plet 10 0 (pxp::prin1-to-string (make-foo00))))
    "#S(FOO00 :A 1
          :B 2)")
   (deftest
-    (progn (xp::defstruct (foo0 (:constructor mf)) (a 1) (b 2))
-	   (plet 11 0 (xp::prin1-to-string (mf))))
+    (progn (pxp::defstruct (foo0 (:constructor mf)) (a 1) (b 2))
+	   (plet 11 0 (pxp::prin1-to-string (mf))))
    "#S(FOO0 :A 1
         :B 2)")
   (deftest
-    (progn (xp::defstruct (foo1 (:conc-name tuz)) a (b 2))
-	   (plet 16 0 (xp::prin1-to-string (make-foo1 :a '(1 2 3)))))
+    (progn (pxp::defstruct (foo1 (:conc-name tuz)) a (b 2))
+	   (plet 16 0 (pxp::prin1-to-string (make-foo1 :a '(1 2 3)))))
    "#S(FOO1 :A (1 2
             3)
         :B 2)")
   (deftest
     (progn (defun foo2p (ob s d)
-	     (if (and *print-level* (not (< d *print-level*))) (xp::princ "#" s)
-		 (xp::format s (formatter "#<foo2 ~_is ~A>") (aa ob))))
-	   (xp::defstruct (foo2 (:conc-name nil) (:print-function foo2p)) (aa 3))
+	     (if (and *print-level* (not (< d *print-level*))) (pxp::princ "#" s)
+		 (pxp::format s (formatter "#<foo2 ~_is ~A>") (aa ob))))
+	   (pxp::defstruct (foo2 (:conc-name nil) (:print-function foo2p)) (aa 3))
 	   (plet 13 0 (list (let ((*print-level* 1))
-			      (xp::format nil (formatter "~W---") (make-foo2)))
+			      (pxp::format nil (formatter "~W---") (make-foo2)))
 			    (let ((*print-level* 0))
-			      (xp::format nil (formatter "~W---") (make-foo2)))
+			      (pxp::format nil (formatter "~W---") (make-foo2)))
 			    (with-output-to-string (s)
 			      (prin1 (make-foo2) s)
 			      (princ "---" s)))))
    ("#<foo2
 is 3>---" "#---" "#<foo2 is 3>---"))
   (deftest
-    (progn (xp::defstruct (foo3 (:type list)) (a 1) (b 2))
+    (progn (pxp::defstruct (foo3 (:type list)) (a 1) (b 2))
 	   (prints (make-foo3))))
   (deftest
-    (progn (xp::defstruct (foo4 (:include foo2)) (e 1))
+    (progn (pxp::defstruct (foo4 (:include foo2)) (e 1))
 	   (prints (make-foo4))))
 
 ;Tests of things about dispatching
@@ -1215,18 +1215,18 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (xp::format xp (formatter "~@{~@<ZOTZ-~W~:>~}") (cadr list))) 0 *dt*)
+	    (pxp::format xp (formatter "~@{~@<ZOTZ-~W~:>~}") (cadr list))) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
-		   (xp::format nil (formatter "~W")
+		   (pxp::format nil (formatter "~W")
 			       '((zotz 1) (zotz 2) (zotz 3))))))
    "(ZOTZ-1 ZOTZ-2 ZOTZ-3)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	   (xp::format xp (formatter "~@<ZOTZ-~W~:>") (cadr list))) 0 *dt*)
+	   (pxp::format xp (formatter "~@<ZOTZ-~W~:>") (cadr list))) 0 *dt*)
       (plet 60 0 (let ((*print-shared* t))
-		   (xp::format nil (formatter "~W")
+		   (pxp::format nil (formatter "~W")
 			       (read-from-string
 				 "(#1=(zotz 1) #1# (zotz (1 #2=(2 #2#))))")))))
    "(#1=ZOTZ-1 #1# ZOTZ-(1 #2=(2 #2#)))")
@@ -1234,18 +1234,18 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (xp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
+	    (pxp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
-		   (xp::format nil (formatter "~W")
+		   (pxp::format nil (formatter "~W")
 			       '((zotz 1) (zotz 2) (zotz 3))))))
    "(ZOTZ-1 ZOTZ-2 ZOTZ-3)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member zotz))
 	#'(lambda (xp list)
-	    (xp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
+	    (pxp::format xp (formatter "~<~*ZOTZ-~W~:>") list)) 0 *dt*)
       (plet 30 0 (let ((*print-shared* t))
-		   (xp::format nil (formatter "~W")
+		   (pxp::format nil (formatter "~W")
 			       (read-from-string
 				 "((zotz 1) #1=(zotz 2) #1#)")))))
    "(ZOTZ-1 #1=ZOTZ-2 #1#)")
@@ -1253,54 +1253,54 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch 'null (formatter "()"))
-      (plet 20 0 (xp::format nil (formatter "~W") nil)))
+      (plet 20 0 (pxp::format nil (formatter "~W") nil)))
    "()")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (not (satisfies numberp))
 				  (cons (member a b c)))
 			   (formatter "~{~a+~a~}"))
-      (plet 20 0 (xp::format nil (formatter "~W") '(a a))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '(a a))))
    "A+A")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (cons) (cons (member a)))
 			   (formatter "~{~a-~a~}") 1)
-      (plet 20 0 (xp::format nil (formatter "~W") '((a) a))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '((a) a))))
    "(A)-A")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch 'hash-table (formatter "foof"))
-      (plet 20 0 (xp::format nil (formatter "~W") (make-hash-table))))
+      (plet 20 0 (pxp::format nil (formatter "~W") (make-hash-table))))
    "foof")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(and integer (satisfies evenp)) (formatter "+~D") 3 *dt*)
-      (plet 20 0 (xp::format nil (formatter "~W") '(1 2 3 4))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '(1 2 3 4))))
    "(1 +2 3 +4)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(and (member 10 11 12)) (formatter "**~D") 20 *dt*)
-      (plet 20 0 (xp::format nil (formatter "~W") '(1 12 3 11))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '(1 12 3 11))))
    "(1 **12 3 **11)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(and (member 10 11 12)) nil 0 *dt*)
-      (plet 20 0 (xp::format nil (formatter "~W") '(1 12 3 11))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '(1 12 3 11))))
    "(1 +12 3 11)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(vector * 4)
 	#'(lambda (xp obj)
-	    (xp::format xp (formatter "--~S") (coerce obj 'list))))
-      (plet 20 0 (xp::format nil (formatter "~W") '#(k l d a))))
+	    (pxp::format xp (formatter "--~S") (coerce obj 'list))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '#(k l d a))))
    "--(K L D A)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member unwind-protect))
 	#'(lambda (xp list)
-	    (xp::print-fancy-fn-call xp list '(0 3 1 0))))
-      (plet 20 0 (xp::format nil (formatter "~W")
+	    (pxp::print-fancy-fn-call xp list '(0 3 1 0))))
+      (plet 20 0 (pxp::format nil (formatter "~W")
 			     '(unwind-protect (open f) (print errormsg)))))
    "(UNWIND-PROTECT
     (OPEN F)
@@ -1309,7 +1309,7 @@ is 3>---" "#---" "#<foo2 is 3>---"))
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member unwind-protect))
 			   (pprint-dispatch '(unwind-protect) nil))
-      (plet 20 0 (xp::format nil (formatter "~W")
+      (plet 20 0 (pxp::format nil (formatter "~W")
 			     '(unwind-protect (open f) (print errormsg)))))
    "(UNWIND-PROTECT
     (OPEN F)
@@ -1318,54 +1318,54 @@ is 3>---" "#---" "#<foo2 is 3>---"))
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member unwind-protect)) nil)
-      (plet 30 1 (xp::format nil (formatter "~W")
+      (plet 30 1 (pxp::format nil (formatter "~W")
 			     '(unwind-protect (open f) (print errormsg)))))
    "(UNWIND-PROTECT (OPEN F)
                 (PRINT ERRORMSG))") ;note zwei: offset hash table
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch 'cons (formatter "zot ~{~A ~}") 1)
-      (plet 20 0 (xp::format nil (formatter "~W") '(setq a b))))
+      (plet 20 0 (pxp::format nil (formatter "~W") '(setq a b))))
    "zot SETQ A B ")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch 'cons (pprint-dispatch '(22 . 33) nil) 1)
-      (plet 30 0 (xp::format nil (formatter "~W")
+      (plet 30 0 (pxp::format nil (formatter "~W")
 			     '(unwind-protect (open f) (print errormsg)))))
    "(UNWIND-PROTECT (OPEN F)
  (PRINT ERRORMSG))")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons) (formatter "zoz ~{~A ~}") 2)
-      (plet 100 0 (xp::format nil (formatter "~W") '(foo bar))))
+      (plet 100 0 (pxp::format nil (formatter "~W") '(foo bar))))
    "zoz FOO BAR ")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons integer) (formatter "int ~{~A ~}") 3)
-      (plet 100 0 (xp::format nil (formatter "~W") '(3 bar))))
+      (plet 100 0 (pxp::format nil (formatter "~W") '(3 bar))))
    "int 3 BAR ")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member a b)) (formatter "pip ~{~A ~}") 3)
-      (plet 100 0 (xp::format nil (formatter "~W") '(a bar))))
+      (plet 100 0 (pxp::format nil (formatter "~W") '(a bar))))
    "pip A BAR ")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch '(cons (member c)) (formatter "pop ~{~A~}") 4)
-      (plet 100 0 (xp::format nil (formatter "~W") '(a bar))))
+      (plet 100 0 (pxp::format nil (formatter "~W") '(a bar))))
    "pip A BAR ")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (let ((data (make-foo :a 10 :b 20)))
-	(plet 22 0 (xp::format nil (formatter "~W") data))))
+	(plet 22 0 (pxp::format nil (formatter "~W") data))))
     "#S(FOO :A +10 :B +20)")
   (deftest
     (let ((*print-pprint-dispatch* *dt*))
       (set-pprint-dispatch 'foo
 	#'(lambda (xp obj)
-	    (xp::format xp (formatter "foo-~A-~A") (foo-a obj) (foo-b obj))))
+	    (pxp::format xp (formatter "foo-~A-~A") (foo-a obj) (foo-b obj))))
       (let ((data (make-foo :a 11 :b 21)))
-	(plet 20 0 (xp::format nil (formatter "~W") data))))
+	(plet 20 0 (pxp::format nil (formatter "~W") data))))
     "foo-11-21")
 
 ;Tests of the functional interface to the dynamic formatting things.
@@ -1382,11 +1382,11 @@ is 3>---" "#---" "#<foo2 is 3>---"))
 	      (write-char #\space)
 	      (pprint-indent :current 0)
 	      (pprint-newline :miser)
-	      (loop (xp::write (pprint-pop))
+	      (loop (pxp::write (pprint-pop))
 		    (pprint-exit-if-list-exhausted)
 		    (write-char #\space)
 		    (pprint-newline :fill)
-		    (xp::write (pprint-pop))
+		    (pxp::write (pprint-pop))
 		    (pprint-exit-if-list-exhausted)
 		    (write-char #\space)
 		    (pprint-newline :linear)))))
@@ -1489,43 +1489,43 @@ is 3>---" "#---" "#<foo2 is 3>---"))
 		     (pprint-tab :section-relative 0 tabsize s)
 		     (pprint-newline :fill s))))
 	   nil))
-  ((plet 100 0 (xp::format nil (formatter "---~5/my-pprint-tabular/--")
+  ((plet 100 0 (pxp::format nil (formatter "---~5/my-pprint-tabular/--")
 		       '(12 3456 789 22 45656 78)))
    "---12   3456 789  22   45656     78--")
   ((plet 100 0
      (let ((*print-length* 3))
-       (xp::format nil (formatter "---~5/my-pprint-tabular/--")
+       (pxp::format nil (formatter "---~5/my-pprint-tabular/--")
 		  '(12 3456 789 22 456 78))))
    "---12   3456 789  ...--")
-  ((plet 21 0 (xp::format nil (formatter "---~5/my-pprint-tabular/--")
+  ((plet 21 0 (pxp::format nil (formatter "---~5/my-pprint-tabular/--")
 		       '(12 3456 789 22 456 78)))
    "---12   3456 789
    22   456  78--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/my-pprint-tabular/--")
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/my-pprint-tabular/--")
 		       '(12 3456 789 22 456 78)))
    "---(12   3456 789
     22   456  78)--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/my-pprint-tabular/--")
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/my-pprint-tabular/--")
 		       '(12 3456 789 22 456 78)))
    "---(12   3456 789
     22   456  78)--")
   ((plet 100 0
      (let ((*print-length* 3))
-       (xp::format nil (formatter "---~5:/my-pprint-tabular/--")
+       (pxp::format nil (formatter "---~5:/my-pprint-tabular/--")
 		  '(12 3456 789 22 456 78))))
    "---(12   3456 789  ...)--")
-  ((plet 41 0 (xp::format nil (formatter "---~V/my-pprint-tabular/--")
+  ((plet 41 0 (pxp::format nil (formatter "---~V/my-pprint-tabular/--")
 		       nil '(12 3456 789 22 456 78)))
    "---12              3456
    789             22
    456             78--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/my-pprint-tabular/--") ()))
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/my-pprint-tabular/--") ()))
    "---()--")
-  ((plet 21 0 (xp::format nil (formatter "---~5:/my-pprint-tabular/--") 12))
+  ((plet 21 0 (pxp::format nil (formatter "---~5:/my-pprint-tabular/--") 12))
    "---12--")
-  ((plet 21 0 (let ((*print-level* 0)) (xp::format nil (formatter "---~5/my-pprint-tabular/--") ())))
+  ((plet 21 0 (let ((*print-level* 0)) (pxp::format nil (formatter "---~5/my-pprint-tabular/--") ())))
    "---#--")
-  ((plet 21 0 (let ((*print-level* 0)) (xp::format nil (formatter "---~5:/my-pprint-tabular/--") ())))
+  ((plet 21 0 (let ((*print-level* 0)) (pxp::format nil (formatter "---~5:/my-pprint-tabular/--") ())))
    "---#--")
 
 ;tests of formats for various special forms.
@@ -2002,7 +2002,7 @@ o\"")
   ((print*s '*<-+->*) "*<-+->*")
   ((print*s '*<-+->*) "*<-+->*")
 
-  ((prints 'xp::print-fixnum))
+  ((prints 'pxp::print-fixnum))
   ((prints '\fo\o-bar (*print-escape* nil) (*print-case* :capitalize)))
   ((prints '\fo\o-bar (*print-escape* nil) (*print-case* :downcase)))
   ((prints '\fo\o-bar (*print-escape* nil) (*print-case* :upcase)))
@@ -2111,58 +2111,58 @@ o\"")
 
 ;Some tests for particular problems that came up along the way
 
-  ((plet 15 0 (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
+  ((plet 15 0 (pxp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
    "aaabbbcccdddeee")
-  ((plet 14 0 (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
+  ((plet 14 0 (pxp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
    "aaabbbcccddd
 eee")
-  ((plet 12 0 (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
+  ((plet 12 0 (pxp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
    "aaabbbcccddd
 eee")
-  ((plet 11 0 (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
+  ((plet 11 0 (pxp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
    "aaabbb
    cccddd
 eee")
-  ((plet 5 0  (xp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
+  ((plet 5 0  (pxp::format nil (formatter "aaa~@<bbb~_ccc~:>ddd~_eee")))
    "aaabbb
    cccddd
 eee")
 
-  ((plet 15 0 (xp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
+  ((plet 15 0 (pxp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
    "aaabbbcccdddeee")
-  ((plet 14 0 (xp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
+  ((plet 14 0 (pxp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
    "aaabbbcccddd
  eee")
-  ((plet 12 0 (xp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
+  ((plet 12 0 (pxp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
    "aaabbbcccddd
  eee")
-  ((plet 11 0 (xp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
+  ((plet 11 0 (pxp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
    "aaabbb
    cccddd
  eee")
-  ((plet 5 0  (xp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
+  ((plet 5 0  (pxp::format nil (formatter "a~@<aa~@<bbb~_ccc~:>ddd~_ee~:>e")))
    "aaabbb
    cccddd
  eee")
 
    ((plet 15 0 (let ((*print-lines* 1))
-		 (xp::format nil (formatter "~W") '(101 bar b zoto))))
+		 (pxp::format nil (formatter "~W") '(101 bar b zoto))))
     "(101 BAR B ..)")
    ((plet 15 0 (let ((*print-lines* 1))
-		 (xp::format nil (formatter "~W") '(101 bar ba zoto))))
+		 (pxp::format nil (formatter "~W") '(101 bar ba zoto))))
     "(101 BAR BA ..)")
    ((plet 15 0 (let ((*print-lines* 1))
-		 (xp::format nil (formatter "~W") '(101 bar baz zoto))))
+		 (pxp::format nil (formatter "~W") '(101 bar baz zoto))))
     "(101 BAR ..)")
    ((plet 15 0 (let ((*print-lines* 1))
-		 (xp::format nil (formatter "~W") '(101 (20 2) zoto))))
+		 (pxp::format nil (formatter "~W") '(101 (20 2) zoto))))
     "(101 (20 2) ..)")
    ((plet 15 0 (let ((*print-lines* 1))
-		 (xp::format nil (formatter "~W") '(101 (20 20) zoto))))
+		 (pxp::format nil (formatter "~W") '(101 (20 20) zoto))))
     "(101 ..)")
   ((plet 15 0
      (let ((*print-lines* 2))
-       (xp::format nil (formatter "~:<---~<~;~a ~_~a ~_~a~;>+~:>--~:>") '((12 3456 789)))))
+       (pxp::format nil (formatter "~:<---~<~;~a ~_~a ~_~a~;>+~:>--~:>") '((12 3456 789)))))
    "(---12
     3456 ..>+)")
 
@@ -2170,55 +2170,55 @@ eee")
 
    ((plet 20 0 (with-output-to-string (s)
 		 (princ "abcde" s)
-		 (xp::format s (formatter "~%~@<1234~:@_5678~:>"))))
+		 (pxp::format s (formatter "~%~@<1234~:@_5678~:>"))))
     "abcde
 1234
 5678")
 
-  ((plet 20 0 (xp::format nil (formatter "~@<foo ~4:ia~:@_b~:>")))
+  ((plet 20 0 (pxp::format nil (formatter "~@<foo ~4:ia~:@_b~:>")))
    "foo a
         b")
-  ((plet 20 0 (xp::format nil (formatter "~@<foo ~4:ia~:@_~:@_b~:>")))
+  ((plet 20 0 (pxp::format nil (formatter "~@<foo ~4:ia~:@_~:@_b~:>")))
    "foo a
 
         b")
 
 ;tests for going over the length of various queues and stacks.
  #-franz-inc
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 400 0 (xp::format nil (formatter "~@<foo ~300ia~:@_b~305i~:@_c~:>"))))
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 400 0 (pxp::format nil (formatter "~@<foo ~300ia~:@_b~305i~:@_c~:>"))))
    #.(cl:format nil "foo a~%~300@Tb~%~305@Tc"))
 
  #-franz-inc
-  ((progn (setq xp::*free-xps* nil)
+  ((progn (setq pxp::*free-xps* nil)
 	  (plet 400 0
-	    (xp::format nil (formatter "~@<foo ~250ia~:@_~@<0123456~@;b~@<++++~@;c~:@_d~:>~:>~:>"))))
+	    (pxp::format nil (formatter "~@<foo ~250ia~:@_~@<0123456~@;b~@<++++~@;c~:@_d~:>~:>~:>"))))
    #.(cl:format nil "foo a~%~250@T0123456b++++c~%~250@T0123456 ++++d"))
 
  #-franz-inc
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 400 0 (xp::format nil (formatter "~@<~250@Ta~_~10@Tb~5@Tc~:>"))))
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 400 0 (pxp::format nil (formatter "~@<~250@Ta~_~10@Tb~5@Tc~:>"))))
    #.(cl:format nil "~250@Ta~10@Tb~5@Tc"))
  #-franz-inc
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 200 0 (xp::format nil (formatter "~@<~250@Ta~10@Tb~5@Tc~:>"))))
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 200 0 (pxp::format nil (formatter "~@<~250@Ta~10@Tb~5@Tc~:>"))))
    #.(cl:format nil "~250@Ta~10@Tb~5@Tc"))
 
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 85 0 (xp::format nil (formatter "~W") 
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 85 0 (pxp::format nil (formatter "~W") 
 '((((((((((((((((((((((((((((((((((((((setq a b
 					    c d)))))))))))))))))))))))))))))))))))))))))
    ;the next 2 lines must have spaces on them, not tabs
    "((((((((((((((((((((((((((((((((((((((SETQ A B
                                            C D))))))))))))))))))))))))))))))))))))))")
 
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 200 0 (xp::format nil (formatter "~W") 
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 200 0 (pxp::format nil (formatter "~W") 
 '(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))))
    "(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)")
-  ((progn (setq xp::*free-xps* nil)
-	  (plet 50 0 (xp::format nil (formatter "~W") 
+  ((progn (setq pxp::*free-xps* nil)
+	  (plet 50 0 (pxp::format nil (formatter "~W") 
 '(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
   1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))))
    "(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1
@@ -2228,36 +2228,36 @@ eee")
 
 ;testing error checking
 
-  (etest (xp::format nil (formatter "ab~1,2")) (1 2))
-  (etest (xp::format nil (formatter "ab~1,'")) (2 5))
-  (etest (xp::format nil (formatter "ab~1/foo")) (3 4))
-  (etest (xp::format nil (formatter "ab~1{foo~(..~{..~} ~}")) (4 9))
-  (etest (xp::format nil (formatter "ab~!foo")) (5 3))
-  (etest (xp::format nil (formatter "ab~1,2:@Ifoo")) (6 6))
-  (etest (xp::format nil (formatter "ab~2:@:Ifoo")) (7 6))
-  (etest (xp::format nil (formatter "ab~2:@@Ifoo")) (8 6))
-  (etest (xp::format nil (formatter "ab~2:%foo")) (9 5))
-  (etest (xp::format nil (formatter "ab~2@%foo")) (10 5))
-  (etest (xp::format nil (formatter "ab~2@:[foo~]")) (11 6))
-  (etest (xp::format nil (formatter "ab~:[foo~]")) (13 4))
-  (etest (xp::format nil (formatter "ab~@[foo~;bar~]")) (14 4))
-  (etest (xp::format nil (formatter "ab foo~;bar~]")) (15 7))
-  (etest (xp::format nil (formatter "ab ~(foo~]bar~)")) (16 9))
-  (etest (xp::format nil (formatter "ab ~[foo~)bar~]")) (17 9))
-  (etest (xp::format nil (formatter "ab ~[foo~>bar~]")) (18 9))
-  (etest (xp::format nil (formatter "ab ~[foo~}bar~]")) (19 9))
-  (etest (xp::format nil (formatter "ab ~#<ff~>foo")) (21 4))
-  (etest (xp::format nil (formatter "ab ~<f~#%f~>foo")) (21 7))
-  (etest (xp::format nil (formatter "ab ~<f~#af~>foo")) (21 7))
-  (etest (xp::format nil (formatter "ab ~22<f~:;f~>foo")) (22 10))
-  (etest (xp::format nil (formatter "ab ~<f~Wf~>foo")) (23 7))
-  (etest (xp::format nil (formatter "ab ~<f~;g~;h~;f~:>foo")) (24 4))
-  (etest (xp::format nil (formatter "ab ~<f~Af~;g~;h~:>foo")) (25 5))
-  (etest (xp::format nil (formatter "ab ~<f~;g~;h~Ag~:>foo")) (26 11))
+  (etest (pxp::format nil (formatter "ab~1,2")) (1 2))
+  (etest (pxp::format nil (formatter "ab~1,'")) (2 5))
+  (etest (pxp::format nil (formatter "ab~1/foo")) (3 4))
+  (etest (pxp::format nil (formatter "ab~1{foo~(..~{..~} ~}")) (4 9))
+  (etest (pxp::format nil (formatter "ab~!foo")) (5 3))
+  (etest (pxp::format nil (formatter "ab~1,2:@Ifoo")) (6 6))
+  (etest (pxp::format nil (formatter "ab~2:@:Ifoo")) (7 6))
+  (etest (pxp::format nil (formatter "ab~2:@@Ifoo")) (8 6))
+  (etest (pxp::format nil (formatter "ab~2:%foo")) (9 5))
+  (etest (pxp::format nil (formatter "ab~2@%foo")) (10 5))
+  (etest (pxp::format nil (formatter "ab~2@:[foo~]")) (11 6))
+  (etest (pxp::format nil (formatter "ab~:[foo~]")) (13 4))
+  (etest (pxp::format nil (formatter "ab~@[foo~;bar~]")) (14 4))
+  (etest (pxp::format nil (formatter "ab foo~;bar~]")) (15 7))
+  (etest (pxp::format nil (formatter "ab ~(foo~]bar~)")) (16 9))
+  (etest (pxp::format nil (formatter "ab ~[foo~)bar~]")) (17 9))
+  (etest (pxp::format nil (formatter "ab ~[foo~>bar~]")) (18 9))
+  (etest (pxp::format nil (formatter "ab ~[foo~}bar~]")) (19 9))
+  (etest (pxp::format nil (formatter "ab ~#<ff~>foo")) (21 4))
+  (etest (pxp::format nil (formatter "ab ~<f~#%f~>foo")) (21 7))
+  (etest (pxp::format nil (formatter "ab ~<f~#af~>foo")) (21 7))
+  (etest (pxp::format nil (formatter "ab ~22<f~:;f~>foo")) (22 10))
+  (etest (pxp::format nil (formatter "ab ~<f~Wf~>foo")) (23 7))
+  (etest (pxp::format nil (formatter "ab ~<f~;g~;h~;f~:>foo")) (24 4))
+  (etest (pxp::format nil (formatter "ab ~<f~Af~;g~;h~:>foo")) (25 5))
+  (etest (pxp::format nil (formatter "ab ~<f~;g~;h~Ag~:>foo")) (26 11))
 
 ;tests added in later releases.
 
-   ((xp::format nil "A ~:<1 ~_2~:>~%B" nil)
+   ((pxp::format nil "A ~:<1 ~_2~:>~%B" nil)
     "A (1 2)
 B")
    ((ftest 40 0 '(list (loop for x in l and z in y do (print x) (print z) 
@@ -2349,13 +2349,13 @@ B")
 #+symbolics  ;the ~V~ gives many CLs fits.
   ((formats "~A-~10:<~V~ ~;~A~>-~A" 1 3 'bar 2))
 #+symbolics
-  ((plet 20 0 (xp::format nil (formatter "~|a~3|"))) #.(lisp:format nil "~|a~3|"))
+  ((plet 20 0 (pxp::format nil (formatter "~|a~3|"))) #.(lisp:format nil "~|a~3|"))
 #+symbolics
   (deftest
     (plet 100 0
       (let ((*print-level* 3))
 	(defstruct tester2 a b)
-	(xp::format nil (formatter "0~:@<1~W~:>") (make-tester2 :A '(1 (2 (3)))))))
+	(pxp::format nil (formatter "0~:@<1~W~:>") (make-tester2 :A '(1 (2 (3)))))))
    "0(1#S(TESTER2 :A (1 #) :B NIL))")
 #+symbolics
   ((plet 100 0
@@ -2363,12 +2363,12 @@ B")
       (cons
        (with-output-to-string (s)
 	(setq x (list
-	 (xp::prin1 2 s)
-	 (xp::finish-output s)
-	 (xp::prin1 2 s)
-	 (xp::force-output s)
-	 (xp::prin1 2 s)
-	 (xp::clear-output s))))
+	 (pxp::prin1 2 s)
+	 (pxp::finish-output s)
+	 (pxp::prin1 2 s)
+	 (pxp::force-output s)
+	 (pxp::prin1 2 s)
+	 (pxp::clear-output s))))
        x)))
    ("222" ;note this is very implementation dependent.
     2 nil 2 nil 2 nil))
@@ -2382,7 +2382,7 @@ B")
 #+symbolics
   ((ftest 45 0 '(cons '(cons (member foo)) 
 		  #'(lambda (xp list)
-		      (xp::install xp (formatter "~W") list)) 0 *IPD*))
+		      (pxp::install xp (formatter "~W") list)) 0 *IPD*))
 "(CONS '(CONS (MEMBER FOO))
       #'(LAMBDA (XP LIST)
           (XP::INSTALL XP #\"~W\" LIST))
@@ -2397,14 +2397,14 @@ B")
 #+symbolics
   (test-def ((defun bar4 (s item &rest stuff)
 	       (declare (ignore stuff))
-	       (xp::format s (formatter ",~_~A") item)
-	       (xp::finish-output s)
-	       (xp::format s (formatter ",~_~A") item)
-	       (xp::force-output s)
-	       (xp::format s (formatter ",~_~A") item)
-	       (xp::clear-output s))
+	       (pxp::format s (formatter ",~_~A") item)
+	       (pxp::finish-output s)
+	       (pxp::format s (formatter ",~_~A") item)
+	       (pxp::force-output s)
+	       (pxp::format s (formatter ",~_~A") item)
+	       (pxp::clear-output s))
 	     (plet 100 0
-	       (xp::format nil (formatter "-~<a ~_aa~:>+~_~:<b~/bar4/~:>-") () '(2))))
+	       (pxp::format nil (formatter "-~<a ~_aa~:>+~_~:<b~/bar4/~:>-") () '(2))))
 	    "-a aa+
 \(b,
  2,
