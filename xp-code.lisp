@@ -2842,17 +2842,30 @@
 ;; ".,hoge" is not familier in 2021, so now xp generates ",@hoge" notation.
 ;; Some coner case tests may needed.
 
-(defvar *bq-list* #+cmu 'lisp::backq-list)
-(defvar *bq-list** #+cmu 'lisp::backq-list*)
-(defvar *bq-cons* #+cmu 'lisp::backq-cons)
-(defvar *bq-append* #+cmu 'lisp::backq-append)
-(defvar *bq-nconc* #+cmu 'lisp::backq-nconc)
+(defvar *bq-list*
+  #+cmu 'lisp::backq-list
+  #+abcl 'system::backq-list)
+(defvar *bq-list**
+  #+cmu 'lisp::backq-list*
+  #+abcl 'system::backq-list*)
+(defvar *bq-cons*
+  #+cmu 'lisp::backq-cons
+  #+abcl 'system::backq-cons)
+(defvar *bq-append*
+  #+cmu 'lisp::backq-append
+  #+abcl 'system::backq-append)
+(defvar *bq-nconc*
+  #+cmu 'lisp::backq-nconc
+  #+abcl 'system::backq-nconc)
 
 (defun bq-print (xp obj)
   (funcall (formatter "`~W") xp (bqtify obj)))
 
-(defvar *bq-vector* #+cmu 'lisp::backq-vector)
-(defvar *bq-list-to-vector* #+cmu '#:no-such) ;turned off
+(defvar *bq-vector*
+  #+cmu 'lisp::backq-vector
+  #+abcl 'system::backq-vector)
+(defvar *bq-list-to-vector*
+  #+(or cmu abcl) '#:no-such) ;turned off
 
 (defun bq-vector-print (xp obj)
   (funcall (pxp:formatter "`#~W") xp (car (bqtify obj))))
@@ -2961,7 +2974,7 @@
     (set-pprint-dispatch+ '(cons (member excl::bq-comma-dot)) (printer ",.") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member excl::bq-comma-atsign)) (printer ",@") 0 *IPD*)))
 
-#+(or :cmu)(eval-when (:load-toplevel :execute)
+#+(or :cmu :abcl)(eval-when (:load-toplevel :execute)
 (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
 (set-pprint-dispatch+ `(cons (member ,*bq-cons*)) #'bq-print 0 *IPD*)
 (set-pprint-dispatch+ `(cons (member ,*bq-list*)) #'bq-print 0 *IPD*)
