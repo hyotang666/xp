@@ -1,6 +1,10 @@
 This repository is farked of [yitzchak/xp](https://github.com/yitzchak/xp).
 The goal is to support asdf and current lisp implementations e.g. sbcl, ccl, clisp, ecl...
 
+In order to support abcl who has a package named "XP" already,
+the name is changed to "PXP" which stands in "Portable XP".
+This is a kludge, so may rename again in the future.
+
 ## TODO
 NOTE: Not "Critical bug" is the bug about indentation and newlining.
 Such bugs do not break read/print identity.
@@ -79,9 +83,8 @@ Such bugs do not break read/print identity.
 ```
 
 ### ABCL
-* Issue: ABCL already have the package named "XP".
-* [ ] Loadable.
-* [ ] Testable.
+* [x] Loadable.
+* [x] Testable.
 * [ ] Fixing critical bugs.
 * [ ] Passing the test.
 
