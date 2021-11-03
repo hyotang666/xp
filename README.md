@@ -21,6 +21,15 @@ Such bugs do not break read/print identity.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
 
+#### Issue:
+CCL's backquote is a reader macro.
+And it generates an ordinary lisp operator instead of e.g. `lisp::backq-list` in cmucl.
+With the original XP code, we can not support this ccl behavior.
+
+For maximum portability, we may have to use [fare-quasiquote].
+
+[fare-quasiquote]: https://github.com/fare/fare-quasiquote
+
 ### CLISP
 * [x] Loadable.
 * [x] Testable.
@@ -45,7 +54,7 @@ Such bugs do not break read/print identity.
 * [ ] Fixing critical bugs.
 * [ ] Passing the test.
 
-* Issue
+#### Issue
 
 ```lisp
 (lambda ()
@@ -66,6 +75,10 @@ Such bugs do not break read/print identity.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
+
+#### Issue
+ABCL prints package prefix even if the symbol is accessible.
+For details, see [issue](https://github.com/armedbear/abcl/issues/408).
 
 ### CLASP
 * [ ] Loadable.
