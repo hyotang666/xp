@@ -73,19 +73,28 @@
 
 (in-package :pxp)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; Defpackage xp-user needs this eval-when.
 (defvar *xp-printing-functions*
 	'(write print prin1 princ pprint format write-to-string princ-to-string
 	  prin1-to-string write-line write-string fresh-line
 	  defstruct)
-  "printing functions redefined by xp.")
+  "printing functions redefined by xp."))
 
-(uiop:define-package :xp-user
-  (:mix :pxp :cl)
-  (:export #:*default-right-margin*
-	   #:*last-abbreviated-printing*
-	   #:*print-shared*
-	   . #.(loop :for s :being :each :external-symbol :of :cl
-		     :collect s)))
+#.(let ((pxp-symbols (append *xp-printing-functions*
+			     (loop :for s :being :each :external-symbol :of :pxp
+				   :collect s))))
+    `(defpackage :xp-user (:use)
+       (:import-from :pxp ,@pxp-symbols)
+       (:import-from :cl ,@(loop :for s :being :each :external-symbol :of :cl
+				 :unless (member s pxp-symbols :test #'string=)
+				 :collect s))
+       (:export
+	 ,@(union
+	     (loop :for s :being :each :external-symbol :of :cl
+			:collect s)
+	     (loop :for s :being :each :external-symbol :of :pxp
+		   :collect s)))))
 
 ;must do the following in common lisps not supporting *print-shared*
 
