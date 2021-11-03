@@ -21,38 +21,17 @@ Such bugs do not break read/print identity.
 * [x] Fixing critical bugs.
 * [ ] Passing the test.
 
-* Issue: CCL is seemed to be not able to print list `(function foo)`.
-
-```lisp
-(cl:write '(function foo) :pretty t) => #'FOO
-(cl:write '(function foo) :pretty nil) => #'FOO
-```
-
 ### CLISP
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
-* [ ] Passing the test.
-
-* Issue: CLISP is seemed to be not able to print list `(function foo)`.
-
-```lisp
-(cl:write '(function foo) :pretty t) => #'FOO
-(cl:write '(function foo) :pretty nil) => #'FOO
-```
+* [x] Passing the test.
 
 ### ECL
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
-* [ ] Passing the test.
-
-* Issue: ECL is seemed to be not able to print list `(function foo)`.
-
-```lisp
-(cl:write '(function foo) :pretty t) => #'FOO
-(cl:write '(function foo) :pretty nil) => #'FOO
-```
+* [x] Passing the test.
 
 ### Allegro
 * [x] Loadable.
@@ -85,7 +64,7 @@ Such bugs do not break read/print identity.
 ### ABCL
 * [x] Loadable.
 * [x] Testable.
-* [ ] Fixing critical bugs.
+* [x] Fixing critical bugs.
 * [ ] Passing the test.
 
 ### CLASP

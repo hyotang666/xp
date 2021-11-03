@@ -1341,7 +1341,23 @@
   (setq stream (decode-stream-arg stream))
   (cond ((or (xp-structure-p stream) *print-pretty*)
 	 (basic-write object stream))
-	(T (apply #'cl:write object pairs)))
+	;; I do not why but ccl signals an error
+	;; Special operator or global macro-function FORMATTER can't be FUNCALLed or APPLYed
+	;; when using (and (consp ...)) form in #+ECL.
+	;; So split ecl specific form away.
+	#+(or ccl clisp)
+	((and (null *print-pretty*)
+	      (typep object '(cons (member quote function) (cons t null))))
+	 (funcall (formatter "~:<~W ~W~:>") stream object))
+	#+ecl
+	((and (null *print-pretty*)
+	      (and (consp object)
+		   (member (car object) '(quote function))
+		   (consp (cdr object))
+		   (null (cddr object))))
+	 (funcall (cl:formatter "~:<~W ~W~:>") stream object))
+	(T
+	  (apply #'cl:write object pairs)))
   object)
 
 (defun non-pretty-print (object s)
