@@ -166,8 +166,8 @@
 #-clasp
 (declaim (ftype (function () (values hash-table &optional)) get-circularity-hash-table))
 (defun get-circularity-hash-table ()
-  (let ((table (pop *free-circularity-hash-tables*)))
-    (or table (make-hash-table :test 'eq))))
+  (or (pop *free-circularity-hash-tables*)
+      (make-hash-table :test 'eq)))
 
 ;If you call this, then the table gets efficiently recycled.
 
@@ -289,17 +289,17 @@
 		set-pprint-dispatch+))
 (defun set-pprint-dispatch+ (type-specifier function priority table)
   (let* ((category (specifier-category type-specifier))
-	 (pred
-	   (if (not (eq category :other)) nil
-	       (let ((pred (specifier-fn type-specifier)))
-		 (if (and (consp (caddr pred))
-			  (symbolp (caaddr pred))
-			  (equal (cdaddr pred) '(x)))
-		     (symbol-function (caaddr pred))
-		     (compile nil pred)))))
-	 (entry (if function (make-entry :test pred
-					 :fn function
-					 :full-spec (list priority type-specifier)))))
+	 (entry
+	   (if function
+	     (make-entry :test (if (not (eq category :other)) nil
+				 (let ((pred (specifier-fn type-specifier)))
+				   (if (and (consp (caddr pred))
+					    (symbolp (caaddr pred))
+					    (equal (cdaddr pred) '(x)))
+				     (symbol-function (caaddr pred))
+				     (compile nil pred))))
+			 :fn function
+			 :full-spec (list priority type-specifier)))))
     (ecase category
       (:cons-with-car
 	(cond ((null entry) (remhash (cadadr type-specifier) (conses-with-cars table)))
@@ -744,8 +744,9 @@
 #-clasp
 (declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
 (defun get-pretty-print-stream (stream)
-  (let ((xp (pop *free-xps*)))
-    (initialize-xp (or xp (make-instance 'xp-structure)) stream)))
+  (initialize-xp (or (pop *free-xps*)
+		     (make-instance 'xp-structure))
+		 stream))
 
 ;If you call this, the xp-stream gets efficiently recycled.
 
@@ -1190,9 +1191,7 @@
 		reverse-string-in-place))
 (defun reverse-string-in-place (string start end)
   (do ((i start (1+ i)) (j (1- end) (1- j))) ((not (< i j)) string)
-    (let ((c (char string i)))
-      (setf (char string i) (char string j))
-      (setf (char string j) c))))
+    (rotatef (char string i) (char string j))))
 
 ;		   ---- BASIC INTERFACE FUNCTIONS ----
 
@@ -1349,7 +1348,7 @@
 	    (free-circularity-hash-table *circularity-hash-table*))
 	(when *abbreviation-happened*
 	  (setq *last-abbreviated-printing*
-		(let ((list (copy-list args)))
+		(let ((list (copy-list args))) ; to avoid inner looping.
 		  (lambda (&optional (stream stream))
 		    (let ((*package* *package*))
 		      (apply #'call-with-xp-stream
@@ -1427,13 +1426,12 @@
 	   (print-fixnum xp object) T))
 	((symbolp object)
 	 (let ((s (symbol-name object))
-	       (p (symbol-package object))
 	       (is-key (keywordp object))
 	       (mode (case *print-case*
 		       (:downcase :down)
 		       (:capitalize :cap1)
 		       (T nil)))) ;note no-escapes-needed requires all caps
-	   (cond ((and (or is-key (eq p *package*)
+	   (cond ((and (or is-key (eq (symbol-package object) *package*)
 			   (eq object (find-symbol s)))
 		       (no-escapes-needed s))
 		  (when (and is-key *print-escape*)
@@ -2454,9 +2452,9 @@
       (handle-standard-< start end)))
 
 (defun handle-standard-< (start end)
-  (let ((n (num-args-in-directive start end)))
-    `(using-format xp ,(subseq *string* (1- start) end)
-		   ,@ (copy-tree (make-list n :initial-element (get-arg))))))
+  `(using-format xp ,(subseq *string* (1- start) end)
+		 ,@ (copy-tree (make-list (num-args-in-directive start end)
+					  :initial-element (get-arg)))))
 
 (defun num-args-in-directive (start end)
   (let ((n 0) c i j)
@@ -2611,7 +2609,7 @@
     (labels ((pretty-slice (slice)
 	       (pprint-logical-block (xp nil :prefix *prefix* :suffix ")")
 		 (let ((end (nth slice dims))
-		       (spot (nthcdr slice indices))
+		       (spot (nthcdr slice indices)) ; to avoid inner looping.
 		       (i 0)
 		       (*prefix* "("))
 		   (when (plusp end)
