@@ -79,7 +79,7 @@ ABCL prints package prefix even if the symbol is accessible.
 For details, see [issue](https://github.com/armedbear/abcl/issues/408).
 
 ### CLASP
-* [ ] Loadable.
+* [x] Loadable.
 * [ ] Testable.
 * [ ] Fixing critical bugs.
 * [ ] Passing the test.

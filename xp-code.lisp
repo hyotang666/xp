@@ -2942,31 +2942,31 @@
   #+cmu 'lisp::backq-list
   #+abcl 'system::backq-list
   #.(if (find-package :fare-quasiquote)
-      `'fare-quasiquote::list
+      `',(uiop:find-symbol* 'list '#:fare-quasiquote)
       (values))))
 (defvar *bq-list** (list
   #+cmu 'lisp::backq-list*
   #+abcl 'system::backq-list*
   #.(if (find-package :fare-quasiquote)
-      `'fare-quasiquote::list*
+      `',(uiop:find-symbol* 'list* '#:fare-quasiquote)
       (values))))
 (defvar *bq-cons* (list
   #+cmu 'lisp::backq-cons
   #+abcl 'system::backq-cons
   #.(if (find-package :fare-quasiquote)
-      `'fare-quasiquote::cons
+      `',(uiop:find-symbol* 'cons '#:fare-quasiquote)
       (values))))
 (defvar *bq-append* (list
   #+cmu 'lisp::backq-append
   #+abcl 'system::backq-append
   #.(if (find-package :fare-quasiquote)
-      `'fare-quasiquote::append
+      `',(uiop:find-symbol* 'append '#:fare-quasiquote)
       (values))))
 (defvar *bq-nconc* (list
   #+cmu 'lisp::backq-nconc
   #+abcl 'system::backq-nconc
   #.(if (find-package :fare-quasiquote)
-      `'fare-quasiquote::nconc
+      `',(uiop:find-symbol* 'nconc '#:fare-quasiquote)
       (values))))
 
 (defun bq-print (xp obj)
