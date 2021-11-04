@@ -24,7 +24,7 @@ Such bugs do not break read/print identity.
 #### Issue:
 [fare-quasiquote] is supported.
 Evaluate `(named-readtables:in-readtable :fare-quasiquote)` then
-recompile pxp, all tests are passed.
+`(asdf:test-system :pxp :force t)`, all tests are passed.
 
 [fare-quasiquote]: https://github.com/fare/fare-quasiquote
 
