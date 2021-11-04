@@ -361,10 +361,10 @@
 		    (gethash (type-of object) (structures table)))))
     (if (not entry)
 	(setq entry (find object (others table) :test #'fits))
-	(do ((i (test entry) (1- i))
-	     (l (others table) (cdr l)))
-	    ((zerop i))
-	  (when (fits object (car l)) (setq entry (car l)) (return nil))))
+	(loop :repeat (test entry)
+	      :for o :in (others table)
+	      :when (fits object o)
+	        :do (setq entry o) (loop-finish)))
     (when entry (fn entry))))
 
 #-clasp
@@ -964,13 +964,13 @@
 (defun write-string+++ (string xp start end)
   (let ((new-buffer-end (+ (buffer-ptr xp) (- end start))))
     (check-size xp buffer new-buffer-end)
-    (do ((buffer (buffer xp))
-	 (i (buffer-ptr xp) (1+ i))
-	 (j start (1+ j)))
-	((= j end))
-      (let ((char (char string j)))
-	(if (char-mode xp) (setq char (handle-char-mode xp char)))
-	(setf (char buffer i) char)))
+    (loop :with buffer = (buffer xp)
+	  :for i :upfrom (buffer-ptr xp)
+	  :for j :upfrom start :below end
+	  :do (setf (char buffer i)
+		      (if (char-mode xp)
+			(handle-char-mode xp (char string j))
+			(char string j))))
     (setf (buffer-ptr xp) new-buffer-end))
   (values))
 
@@ -991,15 +991,13 @@
 			  (values null &optional))
 		write-string+))
 (defun write-string+ (string xp start end)
-  (let ((start start) ; to muffle sbcl compiler.
-	(sub-end nil) next-newline)
-    (loop (setq next-newline
-		(position #\newline string :test #'char= :start start :end end))
-	  (setq sub-end (if next-newline next-newline end))
-	  (write-string++ string xp start sub-end)
-	  (when (null next-newline) (return nil))
-	  (pprint-newline+ :unconditional xp)
-	  (setq start (1+ sub-end)))))
+  (loop :for s = start :then (1+ sub-end)
+	:for next-newline = (position #\newline string :test #'char= :start s :end end)
+	:for sub-end = (or next-newline end)
+	:do (write-string++ string xp s sub-end)
+	    (when (null next-newline)
+	      (loop-finish))
+	    (pprint-newline+ :unconditional xp)))
 
 (deftype tab-kind ()
   '(member :section :line-relative :section-relative :line))
@@ -1179,8 +1177,9 @@
   (let* ((end (length suffix-string))
 	 (new-end (+ (suffix-ptr xp) end)))
     (check-size xp suffix new-end)
-    (do ((i (1- new-end) (1- i)) (j 0 (1+ j))) ((= j end))
-      (setf (char (suffix xp) i) (char suffix-string j)))
+    (loop :for i :downfrom (1- new-end)
+	  :for j :upfrom 0 :below end
+	  :do (setf (char (suffix xp) i) (char suffix-string j)))
     (setf (suffix-ptr xp) new-end))
   (values))
 
@@ -1463,13 +1462,13 @@
     (and (not (zerop n))
 	 (let ((c (schar s 0)))
 	   (or (and (alpha-char-p c) (upper-case-p c)) (find c "*<>")))
-	 (do ((i 1 (1+ i))) ((= i n) T)
-	   (let ((c (schar s i)))
-	     (if (not (or (digit-char-p c)
-			  (and (alpha-char-p c) (upper-case-p c))
-			  (find c "*+<>-")))
-		 (return nil)))))))
-
+	 (loop :for i :upfrom 1 :below n
+	       :for c = (schar s i)
+	       :unless (not (or (digit-char-p c)
+				(and (alpha-char-p c) (upper-case-p c))
+				(find c "*+<>-")))
+	         :return nil
+	       :finally (return t)))))
 
 (defun print (object &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
@@ -1854,20 +1853,21 @@
 			  (values t &optional))
 		literal))
 (defun literal (start end &aux (start start))
-  (let ((sub-end nil) next-newline (result nil))
-    (loop (setq next-newline
-		(position #\newline *string* :start start :end end))
-	  (setq sub-end (if next-newline next-newline end))
-	  (when (< start sub-end)
-	    (push (if (= start (1- sub-end))
-		      `(write-char++ ,(aref *string* start) xp)
-		      `(write-string++ ,(subseq *string* start sub-end) xp
-				    ,0 ,(- sub-end start)))
-		  result))
-	  (when (null next-newline) (return nil))
-	  (push `(pprint-newline+ :unconditional xp) result)
-	  (setq start (1+ sub-end)))
-    (if (null (cdr result)) (car result) (cons 'progn (nreverse result)))))
+  (let ((forms
+	  (loop :for s = start :then (1+ sub-end)
+		:for next-newline = (position #\newline *string* :start s :end end)
+		:for sub-end = (or next-newline end)
+		:when (< s sub-end)
+		:collect (if (= s (1- sub-end))
+			   `(write-char++ ,(aref *string* s) xp)
+			   `(write-string++ ,(subseq *string* s sub-end) xp
+					    ,0 ,(- sub-end s)))
+		:when (null next-newline)
+		  :do (loop-finish)
+		:collect `(pprint-newline+ :unconditional xp))))
+    (if (null (cdr forms))
+        (car forms)
+	(cons 'progn forms))))
 
 ;This is available for putting on #".
 
@@ -2265,9 +2265,9 @@
 	`(multiple-newlines1 xp ,kind ,(car params)))))
 
 (defun multiple-newlines1 (xp kind num)
-  (do ((n num (1- n))) ((not (plusp n)))
-    (pprint-newline+ kind xp)
-    (setq kind :unconditional)))
+  (loop :repeat num
+	:do (pprint-newline+ kind xp)
+	    (setq kind :unconditional)))
 
 (def-format-handler #\| (start end) (declare (ignore end))
   (multiple-chars start #.(aref (cl:format nil "~|") 0)))
@@ -2283,8 +2283,7 @@
 	`(multiple-chars1 xp ,(car params) ,char))))
 
 (defun multiple-chars1 (xp num char)
-  (do ((n num (1- n))) ((not (plusp n)))
-    (write-char++ char xp)))
+  (loop :repeat num :do (write-char++ char xp)))
 
 (def-format-handler #\T (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign params) (parse-params start '(1 1))
@@ -2375,12 +2374,9 @@
       (parse-params start nil :max 1 :nocolonatsign T)
     (setq start (1+ (params-end start)))
     (let* ((chunks (chunk-up start end))
-	   (innards (do ((ns chunks (cdr ns))
-			 (ms (cdr chunks) (cdr ms))
-			 (result nil))
-			((null ms) (return (nreverse result)))
-		      (push (compile-format (car ns) (directive-start (car ms)))
-			    result))))
+	   (innards (loop :for n :in chunks
+			  :for m :in (cdr chunks)
+			  :collect (compile-format n (directive-start m)))))
       (cond (colon (when (not (= (length innards) 2))
 		     (err 13 "Wrong number of clauses in ~~:[...~~]" (1- start)))
 		   `(cond ((null ,(get-arg)) ,@ (car innards))
