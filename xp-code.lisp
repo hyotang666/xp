@@ -542,13 +542,8 @@
 (defun Qemptyp (xp)
   (> (Qleft xp) (Qright xp)))
 
-(defun make-xp-structure (&rest args)
-  (apply #'make-instance 'xp-structure args))
-
-
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
-
 
 (defmacro LP<-BP (xp &optional (ptr nil))
   (if (null ptr) (setq ptr `(buffer-ptr ,xp)))
@@ -750,7 +745,7 @@
 (declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
 (defun get-pretty-print-stream (stream)
   (let ((xp (pop *free-xps*)))
-    (initialize-xp (if xp xp (make-xp-structure)) stream)))
+    (initialize-xp (if xp xp (make-instance 'xp-structure)) stream)))
 
 ;If you call this, the xp-stream gets efficiently recycled.
 
