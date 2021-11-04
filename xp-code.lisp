@@ -528,62 +528,6 @@
 (defun make-xp-structure (&rest args)
   (apply #'make-instance 'xp-structure args))
 
-(defmethod print-object ((xp xp-structure) s)
-  (print-unreadable-object (xp s :type t :identity nil)
-    (cl:format s "stream ")
-    (if (not (base-stream xp))
-        (cl:format s "not currently in use")
-        (cl:format s "outputting to ~S" (base-stream xp)))
-    (when (base-stream xp)
-      (cl:format s "~&buffer= ~S" (subseq (buffer xp) 0 (max (buffer-ptr xp) 0)))
-      (when (not *describe-xp-streams-fully*) (cl:princ " ..." s))
-      (when *describe-xp-streams-fully*
-        (cl:format s "~&   pos   _123456789_123456789_123456789_123456789")
-        (cl:format s "~&depth-in-blocks= ~D linel= ~D line-no= ~D line-limit= ~D"
-                     (depth-in-blocks xp) (linel xp) (line-no xp) (line-limit xp))
-        (when (or (char-mode xp) (not (zerop (char-mode-counter xp))))
-          (cl:format s "~&char-mode= ~S char-mode-counter= ~D"
-                       (char-mode xp) (char-mode-counter xp)))
-        (unless (minusp (block-stack-ptr xp))
-          (cl:format s "~&section-start")
-          (do ((save (block-stack-ptr xp)))
-              ((minusp (block-stack-ptr xp)) (setf (block-stack-ptr xp) save))
-            (cl:format s " ~D" (section-start xp))
-            (pop-block-stack xp)))
-        (cl:format s "~&linel= ~D charpos= ~D buffer-ptr= ~D buffer-offset= ~D"
-                     (linel xp) (charpos xp) (buffer-ptr xp) (buffer-offset xp))
-        (unless (minusp (prefix-stack-ptr xp))
-          (cl:format s "~&prefix= ~S"
-                       (subseq (prefix xp) 0 (max (prefix-ptr xp) 0)))
-          (cl:format s "~&suffix= ~S"
-                       (subseq (suffix xp) 0 (max (suffix-ptr xp) 0))))
-        (unless (Qemptyp xp)
-          (cl:format s "~&ptr type         kind           pos depth end offset arg")
-          (do ((p (Qleft xp) (Qnext p))) ((> p (Qright xp)))
-            (cl:format s "~&~4A~13A~15A~4A~6A~4A~7A~A"
-              (/ (- p (Qleft xp)) #.queue-entry-size)
-              (Qtype xp p)
-              (if (member (Qtype xp p) '(:newline :ind)) (Qkind xp p) "")
-              (BP<-TP xp (Qpos xp p))
-              (Qdepth xp p)
-              (if (not (member (Qtype xp p) '(:newline :start-block))) ""
-                  (and (Qend xp p)
-                       (/ (- (+ p (Qend xp p)) (Qleft xp)) #.queue-entry-size)))
-              (if (not (eq (Qtype xp p) :start-block)) ""
-                  (and (Qoffset xp p)
-                       (/ (- (+ p (Qoffset xp p)) (Qleft xp)) #.queue-entry-size)))
-              (if (not (member (Qtype xp p) '(:ind :start-block :end-block))) ""
-                  (Qarg xp p)))))
-        (unless (minusp (prefix-stack-ptr xp))
-          (cl:format s "~&initial-prefix-ptr prefix-ptr suffix-ptr non-blank start-line")
-          (do ((save (prefix-stack-ptr xp)))
-              ((minusp (prefix-stack-ptr xp)) (setf (prefix-stack-ptr xp) save))
-            (cl:format s "~& ~19A~11A~11A~10A~A"
-                         (initial-prefix-ptr xp) (prefix-ptr xp) (suffix-ptr xp)
-                         (non-blank-prefix-ptr xp) (section-start-line xp))
-            (pop-prefix-stack xp))))))
-  (values))
-
 
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
@@ -711,6 +655,62 @@
 
 (declaim (type boolean *describe-xp-streams-fully*))
 (defvar *describe-xp-streams-fully* nil "Set to T to see more info.")
+
+(defmethod print-object ((xp xp-structure) s)
+  (print-unreadable-object (xp s :type t :identity nil)
+    (cl:format s "stream ")
+    (if (not (base-stream xp))
+        (cl:format s "not currently in use")
+        (cl:format s "outputting to ~S" (base-stream xp)))
+    (when (base-stream xp)
+      (cl:format s "~&buffer= ~S" (subseq (buffer xp) 0 (max (buffer-ptr xp) 0)))
+      (when (not *describe-xp-streams-fully*) (cl:princ " ..." s))
+      (when *describe-xp-streams-fully*
+        (cl:format s "~&   pos   _123456789_123456789_123456789_123456789")
+        (cl:format s "~&depth-in-blocks= ~D linel= ~D line-no= ~D line-limit= ~D"
+                     (depth-in-blocks xp) (linel xp) (line-no xp) (line-limit xp))
+        (when (or (char-mode xp) (not (zerop (char-mode-counter xp))))
+          (cl:format s "~&char-mode= ~S char-mode-counter= ~D"
+                       (char-mode xp) (char-mode-counter xp)))
+        (unless (minusp (block-stack-ptr xp))
+          (cl:format s "~&section-start")
+          (do ((save (block-stack-ptr xp)))
+              ((minusp (block-stack-ptr xp)) (setf (block-stack-ptr xp) save))
+            (cl:format s " ~D" (section-start xp))
+            (pop-block-stack xp)))
+        (cl:format s "~&linel= ~D charpos= ~D buffer-ptr= ~D buffer-offset= ~D"
+                     (linel xp) (charpos xp) (buffer-ptr xp) (buffer-offset xp))
+        (unless (minusp (prefix-stack-ptr xp))
+          (cl:format s "~&prefix= ~S"
+                       (subseq (prefix xp) 0 (max (prefix-ptr xp) 0)))
+          (cl:format s "~&suffix= ~S"
+                       (subseq (suffix xp) 0 (max (suffix-ptr xp) 0))))
+        (unless (Qemptyp xp)
+          (cl:format s "~&ptr type         kind           pos depth end offset arg")
+          (do ((p (Qleft xp) (Qnext p))) ((> p (Qright xp)))
+            (cl:format s "~&~4A~13A~15A~4A~6A~4A~7A~A"
+              (/ (- p (Qleft xp)) #.queue-entry-size)
+              (Qtype xp p)
+              (if (member (Qtype xp p) '(:newline :ind)) (Qkind xp p) "")
+              (BP<-TP xp (Qpos xp p))
+              (Qdepth xp p)
+              (if (not (member (Qtype xp p) '(:newline :start-block))) ""
+                  (and (Qend xp p)
+                       (/ (- (+ p (Qend xp p)) (Qleft xp)) #.queue-entry-size)))
+              (if (not (eq (Qtype xp p) :start-block)) ""
+                  (and (Qoffset xp p)
+                       (/ (- (+ p (Qoffset xp p)) (Qleft xp)) #.queue-entry-size)))
+              (if (not (member (Qtype xp p) '(:ind :start-block :end-block))) ""
+                  (Qarg xp p)))))
+        (unless (minusp (prefix-stack-ptr xp))
+          (cl:format s "~&initial-prefix-ptr prefix-ptr suffix-ptr non-blank start-line")
+          (do ((save (prefix-stack-ptr xp)))
+              ((minusp (prefix-stack-ptr xp)) (setf (prefix-stack-ptr xp) save))
+            (cl:format s "~& ~19A~11A~11A~10A~A"
+                         (initial-prefix-ptr xp) (prefix-ptr xp) (suffix-ptr xp)
+                         (non-blank-prefix-ptr xp) (section-start-line xp))
+            (pop-prefix-stack xp))))))
+  (values))
 
 ;This maintains a list of XP structures.  We save them
 ;so that we don't have to create new ones all of the time.
