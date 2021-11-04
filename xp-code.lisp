@@ -167,7 +167,7 @@
 (declaim (ftype (function () (values hash-table &optional)) get-circularity-hash-table))
 (defun get-circularity-hash-table ()
   (let ((table (pop *free-circularity-hash-tables*)))
-    (if table table (make-hash-table :test 'eq))))
+    (or table (make-hash-table :test 'eq))))
 
 ;If you call this, then the table gets efficiently recycled.
 
@@ -745,7 +745,7 @@
 (declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
 (defun get-pretty-print-stream (stream)
   (let ((xp (pop *free-xps*)))
-    (initialize-xp (if xp xp (make-instance 'xp-structure)) stream)))
+    (initialize-xp (or xp (make-instance 'xp-structure)) stream)))
 
 ;If you call this, the xp-stream gets efficiently recycled.
 
@@ -2025,7 +2025,7 @@
     (prog (c i j fn)
      L(multiple-value-setq (c i j) (next-directive start end))
       (when (if (null c) (< start end) (< start i))
-	(push (literal start (if i i end)) result))
+	(push (literal start (or i end)) result))
       (when (null c) (return (nreverse result)))
       (when (char= c #\newline)
 	(multiple-value-bind (colon atsign)
