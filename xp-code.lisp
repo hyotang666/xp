@@ -1805,15 +1805,6 @@
 (defun make-binding (var value body)
   `((let ((,var ,value)) ,@ body)))
 
-(defun num-args () `(length ,(args)))
-
-#-clasp
-(declaim (ftype (function () (values t &optional)) get-arg))
-(defun get-arg ()
-  (if *get-arg-carefully*
-      (if *at-top* `(pprint-pop+top ,(args) xp) `(pprint-pop+ ,(args) xp))
-      `(pop ,(args))))
-
 (defmacro pprint-pop+ (args xp)
   `(if (pprint-pop-check+ ,args ,xp)
        (return-from logical-block nil)
@@ -1899,58 +1890,26 @@
     (lambda (s &rest args)
       (formatter-in-package ,string ,(package-name *package*)))))
 
-#-clasp
-(declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
-(defun formatter-fn (*string* *default-package*)
-  (or (catch :format-compilation-error
-	`(apply (function call-with-xp-stream)
-	        (function
-		 (lambda (xp &rest args)
-		  ,@(bind-initial
-		     `((block top
-			 ,@(let ((*get-arg-carefully* nil)
-				 (*at-top* t)
-				 (*inner-end* 'top)
-				 (*outer-end* 'top))
-			     (compile-format 0 (length *string*))))))
-		  (if ,(args) (copy-list ,(args))))) ;needed by symbolics.
-	        s args))
-      `(apply #'format s *string* args)))
-
-
-
-;The business with the catch above allows many (formatter "...") errors to be
-;reported in a file without stopping the compilation of the file.
-
-#-clasp
-(declaim (ftype (function (string boolean) (values (or string function) &optional))
-		maybe-compile-format-string))
-(defun maybe-compile-format-string (string force-fn?)
-  (if (not (or force-fn? (fancy-directives-p string))) string
-      (eval `(formatter ,string))))
-
-;COMPILE-FORMAT gets called to turn a bit of format control string into code.
-
-(defvar *testing-errors* nil "Used only when testing XP")
-
-;; MEMO: Should be change to CONDITION system?
-#-clasp
-(declaim (ftype (function ((integer 0 *) string (integer 0 *))
-			  #-ccl
-			  (values nil &optional))
-		err))
-(defun err (id msg i)
-  (if *testing-errors* (throw :testing-errors (list id i)))
-  (warn "XP: cannot compile format string ~%~A~%~S~%~V@T|"
-	msg *string* (1+ i))
-  (throw :format-compilation-error nil))
-
 ;; MEMO: FIXME(?) Seems to not be used. Should be removed?
 (defun position-in (set start)
   (position-if #'(lambda (c) (find c set)) *string* :start start))
 
 (defun position-not-in (set start)
   (position-if-not #'(lambda (c) (find c set)) *string* :start start))
+
+#-clasp
+(declaim (ftype (function ((mod #.array-total-size-limit))
+			  (values (mod #.array-total-size-limit) &optional))
+		params-end))
+(defun params-end (start) ;start points just after ~
+  (let ((j start) (end (length *string*)))
+    (loop
+      (setq j (position-not-in "+-0123456789,Vv#:@" j))
+      (when (null j) (err 1 "missing directive" (1- start)))
+      (when (not (eq (aref *string* j) #\')) (return j))
+      (incf j)
+      (if (= j end) (err 2 "No character after '" (1- j)))
+      (incf j))))
 
 #-clasp
 (declaim (ftype (function ((mod #.array-total-size-limit)
@@ -1968,33 +1927,6 @@
  	(when (null j)
 	  (err 3 "Matching / missing" (position #\/ *string* :start start)))))
     (values i j)))
-
-#-clasp
-(declaim (ftype (function ((mod #.array-total-size-limit))
-			  (values (mod #.array-total-size-limit) &optional))
-		params-end))
-(defun params-end (start) ;start points just after ~
-  (let ((j start) (end (length *string*)))
-    (loop
-      (setq j (position-not-in "+-0123456789,Vv#:@" j))
-      (when (null j) (err 1 "missing directive" (1- start)))
-      (when (not (eq (aref *string* j) #\')) (return j))
-      (incf j)
-      (if (= j end) (err 2 "No character after '" (1- j)))
-      (incf j))))
-
-;Only called after correct parse is known.
-
-#-clasp
-(declaim (ftype (function ((mod #.array-total-size-limit))
-			  (values (mod #.array-total-size-limit) &optional))
-		params-start))
-(defun directive-start (end) ;end points at characters after params
-  (loop
-    (setq end (position #\~ *string* :end end :from-end T))
-    (when (or (zerop end) (not (eq (aref *string* (1- end)) #\')))
-      (return end))
-    (decf end)))
 
 #-clasp
 (declaim (ftype (function ((mod #.array-total-size-limit)
@@ -2021,83 +1953,6 @@
 	    (when (minusp count) (setq j k) (return nil))))))
     (values c i j)))
 
-;breaks things up at ~; directives.
-
-#-clasp
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   (mod #.array-total-size-limit))
-			  (values list &optional))
-		chunk-up))
-(defun chunk-up (start end)
-  (let ((positions (list start)) (spot start))
-    (loop
-      (multiple-value-bind (c i j) (next-directive spot end)
-	(declare (ignore i))
-	(when (null c) (return (nreverse (cons end positions))))
-	(when (eql c #\;) (push (1+ j) positions))
-	(setq spot j)))))
-
-#-clasp
-(declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
-(defun fancy-directives-p (*string*)
-  (let (i (j 0) (end (length *string*)) c)
-    (loop
-      (multiple-value-setq (i j) (next-directive1 j end))	
-      (when (not i) (return nil))
-      (setq c (aref *string* j))
-      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
-	(return T)))))
-
-#-clasp
-(declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
-			  (values (or null (mod #.array-total-size-limit)) &optional))
-		num-args-in-args))
-(defun num-args-in-args (start &optional (err nil))
-  (let ((n 0) (i (1- start)) c)
-    (loop
-      (setq i (position-not-in "+-0123456789," (1+ i)))
-      (setq c (aref *string* i))
-      (cond ((or (char= c #\V) (char= c #\v)) (incf n))
-	    ((char= c #\#)
-	     (when err
-	       (err 21 "# not allowed in ~~<...~~> by (formatter \"...\")" start))
-	     (return nil))
-	    ((char= c #\') (incf i))
-	    (T (return n))))))
-
-#-clasp
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   (mod #.array-total-size-limit))
-			  (values list &optional))
-		compile-format))
-(defun compile-format (start end)
-  (let ((start start)
-	(result nil))
-    (prog (c i j fn)
-     L(multiple-value-setq (c i j) (next-directive start end))
-      (when (if (null c) (< start end) (< start i))
-	(push (literal start (if i i end)) result))
-      (when (null c) (return (nreverse result)))
-      (when (char= c #\newline)
-	(multiple-value-bind (colon atsign)
-	    (parse-params (1+ i) nil :nocolonatsign T)
-	  (when atsign (push `(pprint-newline+ :unconditional xp) result))
-	  (incf j)
-	  (when (not colon)
-	    (setq j (position-if-not
-		      #'(lambda (c)
-			  (or (char= c #\tab) (char= c #\space)))
-		      *string* :start j :end end))
-	    (when (null j) (setq j end)))
-	  (setq start j)
-	  (go L)))
-      (setq fn (gethash c *fn-table*))
-      (when (null fn) (err 5 "Unknown format directive" j))
-      (incf j)
-      (push (funcall fn (1+ i) j) result)
-      (setq start j)
-      (go L))))
-
 ;This gets called with start pointing to the character after the ~ that
 ;starts a command.  Defaults, is a list of default values for the
 ;parameters.  Max is the maximum number of parameters allowed.  Nocolon,
@@ -2105,6 +1960,15 @@
 ;combinations are permitted. Parse params returns three values, colon?,
 ;atsign? and a list of code chunks that correspond to the parameters
 ;specified.
+
+#-clasp
+(declaim (ftype (function () (values t &optional)) get-arg))
+(defun get-arg ()
+  (if *get-arg-carefully*
+      (if *at-top* `(pprint-pop+top ,(args) xp) `(pprint-pop+ ,(args) xp))
+      `(pop ,(args))))
+
+(defun num-args () `(length ,(args)))
 
 #-clasp
 (declaim (ftype (function ((mod #.array-total-size-limit)
@@ -2154,6 +2018,142 @@
     (if (and colon atsign nocolonatsign)
 	(err 11 "Colon and atsign together not permitted" i))
     (values colon atsign params)))
+
+#-clasp
+(declaim (ftype (function ((mod #.array-total-size-limit)
+			   (mod #.array-total-size-limit))
+			  (values list &optional))
+		compile-format))
+(defun compile-format (start end)
+  (let ((start start)
+	(result nil))
+    (prog (c i j fn)
+     L(multiple-value-setq (c i j) (next-directive start end))
+      (when (if (null c) (< start end) (< start i))
+	(push (literal start (if i i end)) result))
+      (when (null c) (return (nreverse result)))
+      (when (char= c #\newline)
+	(multiple-value-bind (colon atsign)
+	    (parse-params (1+ i) nil :nocolonatsign T)
+	  (when atsign (push `(pprint-newline+ :unconditional xp) result))
+	  (incf j)
+	  (when (not colon)
+	    (setq j (position-if-not
+		      #'(lambda (c)
+			  (or (char= c #\tab) (char= c #\space)))
+		      *string* :start j :end end))
+	    (when (null j) (setq j end)))
+	  (setq start j)
+	  (go L)))
+      (setq fn (gethash c *fn-table*))
+      (when (null fn) (err 5 "Unknown format directive" j))
+      (incf j)
+      (push (funcall fn (1+ i) j) result)
+      (setq start j)
+      (go L))))
+
+#-clasp
+(declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
+(defun formatter-fn (*string* *default-package*)
+  (or (catch :format-compilation-error
+	`(apply (function call-with-xp-stream)
+	        (function
+		 (lambda (xp &rest args)
+		  ,@(bind-initial
+		     `((block top
+			 ,@(let ((*get-arg-carefully* nil)
+				 (*at-top* t)
+				 (*inner-end* 'top)
+				 (*outer-end* 'top))
+			     (compile-format 0 (length *string*))))))
+		  (if ,(args) (copy-list ,(args))))) ;needed by symbolics.
+	        s args))
+      `(apply #'format s *string* args)))
+
+
+
+;The business with the catch above allows many (formatter "...") errors to be
+;reported in a file without stopping the compilation of the file.
+
+#-clasp
+(declaim (ftype (function (string boolean) (values (or string function) &optional))
+		maybe-compile-format-string))
+(defun maybe-compile-format-string (string force-fn?)
+  (if (not (or force-fn? (fancy-directives-p string))) string
+      (eval `(formatter ,string))))
+
+;COMPILE-FORMAT gets called to turn a bit of format control string into code.
+
+(defvar *testing-errors* nil "Used only when testing XP")
+
+;; MEMO: Should be change to CONDITION system?
+#-clasp
+(declaim (ftype (function ((integer 0 *) string (integer 0 *))
+			  #-ccl
+			  (values nil &optional))
+		err))
+(defun err (id msg i)
+  (if *testing-errors* (throw :testing-errors (list id i)))
+  (warn "XP: cannot compile format string ~%~A~%~S~%~V@T|"
+	msg *string* (1+ i))
+  (throw :format-compilation-error nil))
+
+;Only called after correct parse is known.
+
+#-clasp
+(declaim (ftype (function ((mod #.array-total-size-limit))
+			  (values (mod #.array-total-size-limit) &optional))
+		params-start))
+(defun directive-start (end) ;end points at characters after params
+  (loop
+    (setq end (position #\~ *string* :end end :from-end T))
+    (when (or (zerop end) (not (eq (aref *string* (1- end)) #\')))
+      (return end))
+    (decf end)))
+
+;breaks things up at ~; directives.
+
+#-clasp
+(declaim (ftype (function ((mod #.array-total-size-limit)
+			   (mod #.array-total-size-limit))
+			  (values list &optional))
+		chunk-up))
+(defun chunk-up (start end)
+  (let ((positions (list start)) (spot start))
+    (loop
+      (multiple-value-bind (c i j) (next-directive spot end)
+	(declare (ignore i))
+	(when (null c) (return (nreverse (cons end positions))))
+	(when (eql c #\;) (push (1+ j) positions))
+	(setq spot j)))))
+
+#-clasp
+(declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
+(defun fancy-directives-p (*string*)
+  (let (i (j 0) (end (length *string*)) c)
+    (loop
+      (multiple-value-setq (i j) (next-directive1 j end))	
+      (when (not i) (return nil))
+      (setq c (aref *string* j))
+      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
+	(return T)))))
+
+#-clasp
+(declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
+			  (values (or null (mod #.array-total-size-limit)) &optional))
+		num-args-in-args))
+(defun num-args-in-args (start &optional (err nil))
+  (let ((n 0) (i (1- start)) c)
+    (loop
+      (setq i (position-not-in "+-0123456789," (1+ i)))
+      (setq c (aref *string* i))
+      (cond ((or (char= c #\V) (char= c #\v)) (incf n))
+	    ((char= c #\#)
+	     (when err
+	       (err 21 "# not allowed in ~~<...~~> by (formatter \"...\")" start))
+	     (return nil))
+	    ((char= c #\') (incf i))
+	    (T (return n))))))
 
 ;Both these only called if correct parse already known.
 
