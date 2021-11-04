@@ -757,6 +757,11 @@
   (setf (base-stream xp) nil)
   (pushnew xp *free-xps*))
 
+(defmacro with-xp ((var <stream>) &body body)
+  `(let ((,var (get-pretty-print-stream ,<stream>)))
+     (unwind-protect (progn ,@body)
+       (free-pretty-print-stream ,var))))
+
 ;This is called to initialize things when you start pretty printing.
 
 #-clasp
@@ -1304,23 +1309,22 @@
 #-clasp
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
-  (let ((xp (get-pretty-print-stream stream))
-	(*current-level* 0)
-	(result nil))
-    (catch 'line-limit-abbreviation-exit
-      (start-block xp nil nil nil)
-      (setq result (apply fn xp args))
-      (end-block xp nil))
-    (when (and *locating-circularities*
-	       (zerop *locating-circularities*)	;No circularities.
-	       (= (line-no xp) 1)	     	;Didn't suppress line.
-	       (zerop (buffer-offset xp)))	;Didn't suppress partial line.
-      (setq *locating-circularities* nil))	;print what you have got.
-    (when (catch 'line-limit-abbreviation-exit
-	    (attempt-to-output xp nil T) nil)
-      (attempt-to-output xp T T))
-    (free-pretty-print-stream xp)
-    result))
+  (with-xp (xp stream)
+    (let ((*current-level* 0)
+          (result nil))
+      (catch 'line-limit-abbreviation-exit
+        (start-block xp nil nil nil)
+        (setq result (apply fn xp args))
+        (end-block xp nil))
+      (when (and *locating-circularities*
+                 (zerop *locating-circularities*)	;No circularities.
+                 (= (line-no xp) 1)	     	;Didn't suppress line.
+                 (zerop (buffer-offset xp)))	;Didn't suppress partial line.
+        (setq *locating-circularities* nil))	;print what you have got.
+      (when (catch 'line-limit-abbreviation-exit
+              (attempt-to-output xp nil T) nil)
+        (attempt-to-output xp T T))
+      result)))
 
 (defun xp-print (fn stream args)
   (setq *result* (do-xp-printing fn stream args))
