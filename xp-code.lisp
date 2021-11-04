@@ -2855,30 +2855,45 @@
 ;; ".,hoge" is not familier in 2021, so now xp generates ",@hoge" notation.
 ;; Some coner case tests may needed.
 
-(defvar *bq-list*
+(defvar *bq-list* (list
   #+cmu 'lisp::backq-list
-  #+abcl 'system::backq-list)
-(defvar *bq-list**
+  #+abcl 'system::backq-list
+  #.(if (find-package :fare-quasiquote)
+      `'fare-quasiquote::list
+      (values))))
+(defvar *bq-list** (list
   #+cmu 'lisp::backq-list*
-  #+abcl 'system::backq-list*)
-(defvar *bq-cons*
+  #+abcl 'system::backq-list*
+  #.(if (find-package :fare-quasiquote)
+      `'fare-quasiquote::list*
+      (values))))
+(defvar *bq-cons* (list
   #+cmu 'lisp::backq-cons
-  #+abcl 'system::backq-cons)
-(defvar *bq-append*
+  #+abcl 'system::backq-cons
+  #.(if (find-package :fare-quasiquote)
+      `'fare-quasiquote::cons
+      (values))))
+(defvar *bq-append* (list
   #+cmu 'lisp::backq-append
-  #+abcl 'system::backq-append)
-(defvar *bq-nconc*
+  #+abcl 'system::backq-append
+  #.(if (find-package :fare-quasiquote)
+      `'fare-quasiquote::append
+      (values))))
+(defvar *bq-nconc* (list
   #+cmu 'lisp::backq-nconc
-  #+abcl 'system::backq-nconc)
+  #+abcl 'system::backq-nconc
+  #.(if (find-package :fare-quasiquote)
+      `'fare-quasiquote::nconc
+      (values))))
 
 (defun bq-print (xp obj)
   (funcall (formatter "`~W") xp (bqtify obj)))
 
-(defvar *bq-vector*
+(defvar *bq-vector* (list
   #+cmu 'lisp::backq-vector
-  #+abcl 'system::backq-vector)
-(defvar *bq-list-to-vector*
-  #+(or cmu abcl) '#:no-such) ;turned off
+  #+abcl 'system::backq-vector))
+(defvar *bq-list-to-vector* (list
+  #+(or cmu abcl) '#:no-such)) ;turned off
 
 (defun bq-vector-print (xp obj)
   (funcall (pxp:formatter "`#~W") xp (car (bqtify obj))))
@@ -2903,20 +2918,20 @@
 	 (make-bq-struct :code "," :data exp))
 	((atom exp) exp)
 	((eq (car exp) 'quote) (cadr exp))
-	((eq (car exp) *bq-list*)
+	((member (car exp) *bq-list*)
 	 (mapcar 'bqtify (cdr exp)))
-	((eq (car exp) *bq-cons*)
+	((member (car exp) *bq-cons*)
 	 (cons (bqtify (cadr exp)) (bqtify-inline (cddr exp) nil)))
-	((eq (car exp) *bq-list**)
+	((member (car exp) *bq-list**)
 	 (nconc (mapcar 'bqtify (butlast (cdr exp)))
 		(bqtify-inline (last exp) nil)))
-	((eq (car exp) *bq-append*)
+	((member (car exp) *bq-append*)
 	 (mapcon #'(lambda (x) (bqtify-inline x t)) (cdr exp)))
-	((eq (car exp) *bq-nconc*)
+	((member (car exp) *bq-nconc*)
 	 (mapcon #'(lambda (x) (bqtify-inline x nil)) (cdr exp)))
-	((eq (car exp) *bq-vector*)
+	((member (car exp) *bq-vector*)
 	 (list (mapcar 'bqtify (cdr exp))))
-	((eq (car exp) *bq-list-to-vector*)
+	((member (car exp) *bq-list-to-vector*)
 	 (mapcar 'bqtify (cdr exp)))
 	(t (make-bq-struct :code "," :data exp))))
 
@@ -2987,15 +3002,16 @@
     (set-pprint-dispatch+ '(cons (member excl::bq-comma-dot)) (printer ",.") 0 *IPD*)
     (set-pprint-dispatch+ '(cons (member excl::bq-comma-atsign)) (printer ",@") 0 *IPD*)))
 
-#+(or :cmu :abcl)(eval-when (:load-toplevel :execute)
+#+(or :cmu :abcl #.(cl:if (cl:find-package :fare-quasiquote) '(and) '(or)))
+(eval-when (:load-toplevel :execute)
 (set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-cons*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list**)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-append*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-nconc*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-vector*)) #'bq-vector-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,*bq-list-to-vector*)) #'bq-vector-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-cons*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-list*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-list**)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-append*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-nconc*)) #'bq-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-vector*)) #'bq-vector-print 0 *IPD*)
+(set-pprint-dispatch+ `(cons (member ,@*bq-list-to-vector*)) #'bq-vector-print 0 *IPD*)
 ) ; Eval-when.
 
 (set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)

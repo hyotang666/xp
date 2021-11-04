@@ -22,11 +22,9 @@ Such bugs do not break read/print identity.
 * [ ] Passing the test.
 
 #### Issue:
-CCL's backquote is a reader macro.
-And it generates an ordinary lisp operator instead of e.g. `lisp::backq-list` in cmucl.
-With the original XP code, we can not support this ccl behavior.
-
-For maximum portability, we may have to use [fare-quasiquote].
+[fare-quasiquote] is supported.
+Evaluate `(named-readtables:in-readtable :fare-quasiquote)` then
+recompile pxp, all tests are passed.
 
 [fare-quasiquote]: https://github.com/fare/fare-quasiquote
 
