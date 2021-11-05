@@ -1876,6 +1876,31 @@
     (lambda (s &rest args)
       (formatter-in-package ,string ,(package-name *package*)))))
 
+;;;; CONDITION
+
+(define-condition failed-to-compile (simple-warning)
+  ((id :initarg :id :reader error-id
+       :documentation "Used to identify error point in the test.")
+   (control-string :initarg :control-string :reader control-string)
+   (error-point :initarg :error-point :reader error-point
+		:documentation "The index where the error is occured."))
+  (:report (lambda (this output)
+	     (funcall (cl:formatter "XP: ~A~%~S~%~V@T|")
+		      output
+		      (simple-condition-format-control this)
+		      (control-string this)
+		      (1+ (error-point this))))))
+
+(defvar *xp-condition* 'failed-to-compile
+  "The default condition for ERR.")
+
+(defun failed-to-compile (id msg control-string i)
+  (error (make-condition *xp-condition*
+			 :id id
+			 :control-string control-string
+			 :format-control msg
+			 :error-point i)))
+
 ;; MEMO: FIXME(?) Seems to not be used. Should be removed?
 (defun position-in (set start)
   (position-if #'(lambda (c) (find c set)) *string* :start start))
@@ -1893,11 +1918,11 @@
     (labels ((rec (position)
 	       (cond
 	         ((null position)
-		  (err 1 "missing directive" (1- start)))
+		  (failed-to-compile 1 "missing directive" *string* (1- start)))
 	         ((not (char= (aref control-string position) #\'))
 		  position)
 	         ((= (1+ position) end)
-		  (err 2 "No character after '" position))
+		  (failed-to-compile 2 "No character after '" *string* position))
 	         (t
 		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
       (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
@@ -1921,8 +1946,8 @@
 	(if (not (char= (aref control-string j) #\/))
 	  (values i j)
 	  (values i (or (position #\/ control-string :start (1+ j) :end end)
-			(err 3 "Matching / missing"
-			     (position #\/ control-string :start start)))))))))
+			(failed-to-compile 3 "Matching / missing"
+			     *string* (position #\/ control-string :start start)))))))))
 
 
 (declaim (ftype (function (string &key
@@ -1952,7 +1977,7 @@
 	  (labels ((rec (ii k count)
 		     (cond
 		       ((null ii)
-		        (err 4 "No matching close directive" j))
+		        (failed-to-compile 4 "No matching close directive" *string* j))
 		       ((char= (aref control-string k) directive)
 			;; Nest into.
 		        (multiple-value-call #'rec
@@ -2024,21 +2049,21 @@
 		  ((not (consp (car ps))) (car ps))
 		  (T `(cond (,(car ps)) (T ,(car ds)))))
 	    nps))
-    (if (and max (< max (length params))) (err 6 "Too many parameters" i))
+    (if (and max (< max (length params))) (failed-to-compile 6 "Too many parameters" *string* i))
     (loop
       (setq c (aref *string* i))
       (cond ((char= c #\:)
-	     (if colon (err 7 "Two colons specified" i))
+	     (if colon (failed-to-compile 7 "Two colons specified" *string* i))
 	     (setq colon T))
 	    ((char= c #\@)
-	     (if atsign (err 8 "Two atsigns specified" i))
+	     (if atsign (failed-to-compile 8 "Two atsigns specified" *string* i))
 	     (setq atsign T))
 	    (T (return nil)))
       (incf i))
-    (if (and colon nocolon) (err 9 "Colon not permitted" i))
-    (if (and atsign noatsign) (err 10 "Atsign not permitted" i))
+    (if (and colon nocolon) (failed-to-compile 9 "Colon not permitted" *string* i))
+    (if (and atsign noatsign) (failed-to-compile 10 "Atsign not permitted" *string* i))
     (if (and colon atsign nocolonatsign)
-	(err 11 "Colon and atsign together not permitted" i))
+	(failed-to-compile 11 "Colon and atsign together not permitted" *string* i))
     (values colon atsign params)))
 
 
@@ -2068,7 +2093,7 @@
 	  (setq start j)
 	  (go L)))
       (setq fn (gethash c *fn-table*))
-      (when (null fn) (err 5 "Unknown format directive" j))
+      (when (null fn) (failed-to-compile 5 "Unknown format directive" *string* j))
       (incf j)
       (push (funcall fn (1+ i) j) result)
       (setq start j)
@@ -2076,22 +2101,21 @@
 
 (declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
 (defun formatter-fn (*string* *default-package*)
-  (or (catch :format-compilation-error
-	`(apply (function call-with-xp-stream)
-	        (function
-		 (lambda (xp &rest args)
-		  ,@(bind-initial
-		     `((block top
-			 ,@(let ((*get-arg-carefully* nil)
-				 (*at-top* t)
-				 (*inner-end* 'top)
-				 (*outer-end* 'top))
-			     (compile-format 0 (length *string*))))))
-		  (if ,(args) (copy-list ,(args))))) ;needed by symbolics.
-	        s args))
-      `(apply #'format s *string* args)))
-
-
+  (handler-case `(apply (function call-with-xp-stream)
+			(function
+			  (lambda (xp &rest args)
+			    ,@(bind-initial
+				`((block top
+					 ,@(let ((*get-arg-carefully* nil)
+						 (*at-top* t)
+						 (*inner-end* 'top)
+						 (*outer-end* 'top))
+					     (compile-format 0 (length *string*))))))
+			    (if ,(args) (copy-list ,(args))))) ;needed by symbolics.
+			s args)
+    (failed-to-compile (c)
+      (warn c)
+      `(apply #'format s *string* args))))
 
 ;The business with the catch above allows many (formatter "...") errors to be
 ;reported in a file without stopping the compilation of the file.
@@ -2104,20 +2128,6 @@
       (eval `(formatter ,string))))
 
 ;COMPILE-FORMAT gets called to turn a bit of format control string into code.
-
-(defvar *testing-errors* nil "Used only when testing XP")
-
-;; MEMO: Should be change to CONDITION system?
-
-(declaim (ftype (function ((integer 0 *) string (integer 0 *))
-			  #-ccl
-			  (values nil &optional))
-		err))
-(defun err (id msg i)
-  (if *testing-errors* (throw :testing-errors (list id i)))
-  (warn "XP: cannot compile format string ~%~A~%~S~%~V@T|"
-	msg *string* (1+ i))
-  (throw :format-compilation-error nil))
 
 ;Only called after correct parse is known.
 
@@ -2163,15 +2173,15 @@
 (declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
 			  (values (or null (mod #.array-total-size-limit)) &optional))
 		num-args-in-args))
-(defun num-args-in-args (start &optional (err nil))
+(defun num-args-in-args (start &optional (errorp nil))
   (let ((n 0) (i (1- start)) c)
     (loop
       (setq i (position-not-in *string* "+-0123456789," :start (1+ i)))
       (setq c (aref *string* i))
       (cond ((or (char= c #\V) (char= c #\v)) (incf n))
 	    ((char= c #\#)
-	     (when err
-	       (err 21 "# not allowed in ~~<...~~> by (formatter \"...\")" start))
+	     (when errorp
+	       (failed-to-compile 21 "# not allowed in ~~<...~~> by (formatter \"...\")" *string* start))
 	     (return nil))
 	    ((char= c #\') (incf i))
 	    (T (return n))))))
@@ -2399,11 +2409,11 @@
 			  :for m :in (cdr chunks)
 			  :collect (compile-format n (directive-start m)))))
       (cond (colon (when (not (= (length innards) 2))
-		     (err 13 "Wrong number of clauses in ~~:[...~~]" (1- start)))
+		     (failed-to-compile 13 "Wrong number of clauses in ~~:[...~~]" *string* (1- start)))
 		   `(cond ((null ,(get-arg)) ,@ (car innards))
 			  (T ,@ (cadr innards))))
 	    (atsign (when (not (= (length innards) 1))
-		      (err 14 "Too many clauses in ~~@[...~~]" (1- start)))
+		      (failed-to-compile 14 "Too many clauses in ~~@[...~~]" *string* (1- start)))
 		    `(cond ((car args) ,@ (car innards)) (T ,(get-arg))))
 	    (T (let* ((j -1) (len (- (length chunks) 2))
 		      (else? (colonp (1- (nth len chunks)))))
@@ -2425,15 +2435,15 @@
 	    (pop-char-mode xp))))
 
 (def-format-handler #\; (start end) (declare (ignore start))
-  (err 15 "~~; appears out of context" (1- end)))
+  (failed-to-compile 15 "~~; appears out of context" *string* (1- end)))
 (def-format-handler #\] (start end) (declare (ignore start))
-  (err 16 "Unmatched closing directive" (1- end)))
+  (failed-to-compile 16 "Unmatched closing directive" *string* (1- end)))
 (def-format-handler #\) (start end) (declare (ignore start))
-  (err 17 "Unmatched closing directive" (1- end)))
+  (failed-to-compile 17 "Unmatched closing directive" *string* (1- end)))
 (def-format-handler #\> (start end) (declare (ignore start))
-  (err 18 "Unmatched closing directive" (1- end)))
+  (failed-to-compile 18 "Unmatched closing directive" *string* (1- end)))
 (def-format-handler #\} (start end) (declare (ignore start))
-  (err 19 "Unmatched closing directive" (1- end)))
+  (failed-to-compile 19 "Unmatched closing directive" *string* (1- end)))
 
 (def-format-handler #\{ (start end)
   (multiple-value-bind (colon atsign params)
@@ -2489,14 +2499,14 @@
       (when (null c) (return n))
       (cond ((eql c #\;)
 	     (if (colonp j)
-		 (err 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." j)))
+		 (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." *string* j)))
 	    ((find c "*[^<_IiWw{Tt")
-	     (err 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." j))
+	     (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
 	    ((eql c #\() (incf n (num-args-in-directive (1+ i) j)))
 	    ((find c "%&\|~") (incf n (num-args-in-args (1+ i) T)))
 	    ((eql c #\?)
 	     (when (atsignp j)
-	       (err 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." j))
+	       (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
 	     (incf n 2))
 	    ((find c "AaSsDdBbOoXxRrCcFfEeGg$Pp")
 	     (incf n (1+ (num-args-in-args (1+ i) T))))))))
@@ -2538,12 +2548,12 @@
 		    (subseq *string* (cadr chunks)
 			    (directive-start (caddr chunks))))
 		   (colon ")"))))
-      (when (cdddr chunks) (err 24 "Too many subclauses in ~~<...~~:>" (1- start)))
+      (when (cdddr chunks) (failed-to-compile 24 "Too many subclauses in ~~<...~~:>" *string* (1- start)))
       (when (and prefix (or (find #\~ prefix) (find #\newline prefix)))
-	(err 25 "Prefix in ~~<...~~:> must be a literal string without newline" start))
+	(failed-to-compile 25 "Prefix in ~~<...~~:> must be a literal string without newline" *string* start))
       (when (and suffix (or (find #\~ suffix) (find #\newline suffix)))
-	(err 26 "Suffix in ~~<...~~:> must be a literal string without newline"
-	     (cadr chunks)))
+	(failed-to-compile 26 "Suffix in ~~<...~~:> must be a literal string without newline"
+	     *string* (cadr chunks)))
       (car (bind-args T (if atsign `(prog1 ,(args) (setq ,(args) nil)) (get-arg))
 	     (bind-initial
 	       `((pprint-logical-block+ (xp ,(args) ,prefix ,suffix ,on-each-line?

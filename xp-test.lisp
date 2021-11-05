@@ -126,9 +126,14 @@
 #+symbolics(compile (cadar form)) ;does not work in all lisps
   (test-ordinary (cadr form)))
 
+(define-condition xp-test (pxp::failed-to-compile) ())
+
 (defun etest (form)
-  (let ((pxp::*testing-errors* T))
-     (catch :testing-errors (eval form))))
+  (let ((pxp::*xp-condition* 'xp-test))
+     (handler-case (eval form)
+       (xp-test (c)
+	 (list (pxp::error-id c)
+	       (pxp::error-point c))))))
 
 ;This tests things where cl:format and xp::format must always be identical.
 
