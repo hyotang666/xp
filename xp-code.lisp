@@ -1781,14 +1781,18 @@
 	   (char= (aref control-string (- j 2)) #\@))))
 
 (declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
-(defun fancy-directives-p (*string*)
-  (let (i (j 0) (end (length *string*)) c)
-    (loop
-      (multiple-value-setq (i j) (next-directive1 *string* :start j :end end))	
-      (when (not i) (return nil))
-      (setq c (aref *string* j))
-      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp *string* j)))
-	(return T)))))
+(defun fancy-directives-p (control-string)
+  (let ((end (length control-string)))
+    (labels ((rec (i j)
+               (when i
+                 (let ((c (aref control-string j)))
+                   (if (or (find c "_Ii/Ww")
+                           (and (find c ">Tt")
+                                (colonp control-string j)))
+                     t
+                     (multiple-value-call #'rec
+                       (next-directive1 control-string :start j :end end)))))))
+      (multiple-value-call #'rec (next-directive1 control-string :start 0 :end end)))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
