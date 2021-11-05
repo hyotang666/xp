@@ -1925,24 +1925,25 @@
 			     (position #\/ control-string :start start)))))))))
 
 
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   (mod #.array-total-size-limit))
+(declaim (ftype (function (string &key
+				  (:start (mod #.array-total-size-limit))
+				  (:end (mod #.array-total-size-limit)))
 			  (values (or null character)
 				  (or null (mod #.array-total-size-limit))
 				  (or null (mod #.array-total-size-limit))
 				  &optional))
 		next-directive))
-(defun next-directive (start end)
+(defun next-directive (control-string &key start end)
   "Return three values.
 1: Next directive character or nil.
 2: Start position of params i.e. tilda, or nil.
 3: End position of params, or nil."
-  (multiple-value-bind (i j) (next-directive1 *string* :start start :end end)
+  (multiple-value-bind (i j) (next-directive1 control-string :start start :end end)
     (if (null i)
       ;; No directives in format control string.
       (values nil nil nil)
       ;; Format control string has directives.
-      (let* ((directive (aref *string* j))
+      (let* ((directive (aref control-string j))
 	     (close (cdr (assoc directive '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))))
 	(if (null close)
 	  ;; Single directive. e.g. ~A, ~S etc.
@@ -1952,26 +1953,26 @@
 		     (cond
 		       ((null ii)
 		        (err 4 "No matching close directive" j))
-		       ((char= (aref *string* k) directive)
+		       ((char= (aref control-string k) directive)
 			;; Nest into.
 		        (multiple-value-call #'rec
-		          (next-directive1 *string* :start k :end end)
+		          (next-directive1 control-string :start k :end end)
 		          (1+ count)))
-		       ((char= (aref *string* k) close)
+		       ((char= (aref control-string k) close)
 			;; Nest back.
 		        (if (minusp (1- count))
 			  ;; Got directive pair.
 		          (values directive i k)
 			  ;; Still not get its pair yet.
 		          (multiple-value-call #'rec
-		            (next-directive1 *string* :start k :end end)
+		            (next-directive1 control-string :start k :end end)
 		            (1- count))))
 		       (t ;; Met single directive, ignore.
 			 (multiple-value-call #'rec
-		            (next-directive1 *string* :start k :end end)
+		            (next-directive1 control-string :start k :end end)
 		            count)))))
 	    (multiple-value-call #'rec
-	      (next-directive1 *string* :start j :end end)
+	      (next-directive1 control-string :start j :end end)
 	      0)))))))
 
 ;This gets called with start pointing to the character after the ~ that
@@ -2049,7 +2050,7 @@
   (let ((start start)
 	(result nil))
     (prog (c i j fn)
-     L(multiple-value-setq (c i j) (next-directive start end))
+     L(multiple-value-setq (c i j) (next-directive *string* :start start :end end))
       (when (if (null c) (< start end) (< start i))
 	(push (literal start (or i end)) result))
       (when (null c) (return (nreverse result)))
@@ -2141,7 +2142,7 @@
 (defun chunk-up (start end)
   (let ((positions (list start)) (spot start))
     (loop
-      (multiple-value-bind (c i j) (next-directive spot end)
+      (multiple-value-bind (c i j) (next-directive *string* :start spot :end end)
 	(declare (ignore i))
 	(when (null c) (return (nreverse (cons end positions))))
 	(when (char= c #\;) (push (1+ j) positions))
@@ -2484,7 +2485,7 @@
     (incf n (num-args-in-args start T))
     (multiple-value-setq (j i) (next-directive1 *string* :start start :end end))
     (loop
-      (multiple-value-setq (c i j) (next-directive j end))
+      (multiple-value-setq (c i j) (next-directive *string* :start j :end end))
       (when (null c) (return n))
       (cond ((eql c #\;)
 	     (if (colonp j)
