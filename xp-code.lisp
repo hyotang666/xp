@@ -1878,16 +1878,17 @@
 
 ;;;; CONDITION
 
-(define-condition failed-to-compile (simple-warning)
+(define-condition failed-to-compile (warning)
   ((id :initarg :id :reader error-id
        :documentation "Used to identify error point in the test.")
    (control-string :initarg :control-string :reader control-string)
    (error-point :initarg :error-point :reader error-point
-		:documentation "The index where the error is occured."))
+		:documentation "The index where the error is occured.")
+   (message :initarg :message :reader error-message))
   (:report (lambda (this output)
 	     (funcall (cl:formatter "XP: ~A~%~S~%~V@T|")
 		      output
-		      (simple-condition-format-control this)
+		      (error-message this)
 		      (control-string this)
 		      (1+ (error-point this))))))
 
@@ -1898,7 +1899,7 @@
   (error (make-condition *xp-condition*
 			 :id id
 			 :control-string control-string
-			 :format-control msg
+			 :message msg
 			 :error-point i)))
 
 ;; MEMO: FIXME(?) Seems to not be used. Should be removed?
@@ -1918,11 +1919,11 @@
     (labels ((rec (position)
 	       (cond
 	         ((null position)
-		  (failed-to-compile 1 "missing directive" *string* (1- start)))
+		  (failed-to-compile 1 "missing directive" control-string (1- start)))
 	         ((not (char= (aref control-string position) #\'))
 		  position)
 	         ((= (1+ position) end)
-		  (failed-to-compile 2 "No character after '" *string* position))
+		  (failed-to-compile 2 "No character after '" control-string position))
 	         (t
 		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
       (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
@@ -1947,7 +1948,7 @@
 	  (values i j)
 	  (values i (or (position #\/ control-string :start (1+ j) :end end)
 			(failed-to-compile 3 "Matching / missing"
-			     *string* (position #\/ control-string :start start)))))))))
+			     control-string (position #\/ control-string :start start)))))))))
 
 
 (declaim (ftype (function (string &key
@@ -1977,7 +1978,7 @@
 	  (labels ((rec (ii k count)
 		     (cond
 		       ((null ii)
-		        (failed-to-compile 4 "No matching close directive" *string* j))
+		        (failed-to-compile 4 "No matching close directive" control-string j))
 		       ((char= (aref control-string k) directive)
 			;; Nest into.
 		        (multiple-value-call #'rec
@@ -2115,7 +2116,8 @@
 			s args)
     (failed-to-compile (c)
       (warn c)
-      `(apply #'format s *string* args))))
+      `(let ((*string* ,*string*))
+	 (apply #'format s *string* args)))))
 
 ;The business with the catch above allows many (formatter "...") errors to be
 ;reported in a file without stopping the compilation of the file.

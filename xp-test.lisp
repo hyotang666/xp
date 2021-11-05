@@ -131,6 +131,10 @@
 (defun etest (form)
   (let ((pxp::*xp-condition* 'xp-test))
      (handler-case (eval form)
+       #+ccl
+       (ccl:compiler-warning (c)
+         (list (pxp::error-id (car (ccl::compiler-warning-args c)))
+	       (pxp::error-point (car (ccl::compiler-warning-args c)))))
        (xp-test (c)
 	 (list (pxp::error-id c)
 	       (pxp::error-point c))))))
