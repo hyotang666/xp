@@ -1894,7 +1894,7 @@
 	       (cond
 	         ((null position)
 		  (err 1 "missing directive" (1- start)))
-	         ((not (eq (aref control-string position) #\'))
+	         ((not (char= (aref control-string position) #\'))
 		  position)
 	         ((= (1+ position) end)
 		  (err 2 "No character after '" position))
@@ -2098,7 +2098,7 @@
 (defun directive-start (end) ;end points at characters after params
   (loop
     (setq end (position #\~ *string* :end end :from-end T))
-    (when (or (zerop end) (not (eq (aref *string* (1- end)) #\')))
+    (when (or (zerop end) (not (char= (aref *string* (1- end)) #\')))
       (return end))
     (decf end)))
 
@@ -2115,7 +2115,7 @@
       (multiple-value-bind (c i j) (next-directive spot end)
 	(declare (ignore i))
 	(when (null c) (return (nreverse (cons end positions))))
-	(when (eql c #\;) (push (1+ j) positions))
+	(when (char= c #\;) (push (1+ j) positions))
 	(setq spot j)))))
 
 
@@ -2154,14 +2154,14 @@
 		colonp
 		atsignp))
 (defun colonp (j) ;j points to directive name
-  (or (eql (aref *string* (1- j)) #\:)
-      (and (eql (aref *string* (1- j)) #\@)
-	   (eql (aref *string* (- j 2)) #\:))))
+  (or (char= (aref *string* (1- j)) #\:)
+      (and (char= (aref *string* (1- j)) #\@)
+	   (char= (aref *string* (- j 2)) #\:))))
 
 (defun atsignp (j) ;j points to directive name
-  (or (eql (aref *string* (1- j)) #\@)
-      (and (eql (aref *string* (1- j)) #\:)
-	   (eql (aref *string* (- j 2)) #\@))))
+  (or (char= (aref *string* (1- j)) #\@)
+      (and (char= (aref *string* (1- j)) #\:)
+	   (char= (aref *string* (- j 2)) #\@))))
 
 (def-format-handler #\/ (start end)
   (multiple-value-bind (colon atsign params) (parse-params start nil :max nil)
