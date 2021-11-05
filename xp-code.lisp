@@ -1884,22 +1884,23 @@
   (position-if-not #'(lambda (c) (find c set)) string :start start))
 
 
-(declaim (ftype (function ((mod #.array-total-size-limit))
+(declaim (ftype (function (string &key (:start (mod #.array-total-size-limit)))
 			  (values (mod #.array-total-size-limit) &optional))
 		params-end))
-(defun params-end (start) ;start points just after ~
-  (let ((end (length *string*)))
+(defun params-end (control-string &key start) ;start points just after ~
+  "Return an end position of the format directive parameters."
+  (let ((end (length control-string)))
     (labels ((rec (position)
 	       (cond
 	         ((null position)
 		  (err 1 "missing directive" (1- start)))
-	         ((not (eq (aref *string* position) #\'))
+	         ((not (eq (aref control-string position) #\'))
 		  position)
 	         ((= (1+ position) end)
 		  (err 2 "No character after '" position))
 	         (t
-		   (rec (position-not-in *string* "+-0123456789,Vv#:@" :start (+ 2 position)))))))
-      (rec (position-not-in *string* "+-0123456789,Vv#:@" :start start)))))
+		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
+      (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
 
 
 (declaim (ftype (function ((mod #.array-total-size-limit)
@@ -1911,7 +1912,7 @@
 (defun next-directive1 (start end)
   (let ((i (position #\~ *string* :start start :end end)) j)
     (when i
-      (setq j (params-end (1+ i)))
+      (setq j (params-end *string* :start (1+ i)))
       (when (char= (aref *string* j) #\/)
 	(setq j (position #\/ *string* :start (1+ j) :end end))
  	(when (null j)
@@ -2163,7 +2164,7 @@
 
 (def-format-handler #\/ (start end)
   (multiple-value-bind (colon atsign params) (parse-params start nil :max nil)
-    (let* ((whole-name-start (1+ (params-end start)))
+    (let* ((whole-name-start (1+ (params-end *string* :start start)))
 	   (colon-pos (position #\: *string* :start whole-name-start :end (1- end)))
 	   (pkg (uiop:find-package*
 		  (if colon-pos
@@ -2281,7 +2282,7 @@
 		  ,(pop params) ,(pop params) xp)))
 
 (def-format-handler #\* (start end) (declare (ignore end))
-  (if (atsignp (params-end start))
+  (if (atsignp (params-end *string* :start start))
       (multiple-value-bind (colon atsign params)
 	  (parse-params start '(0) :nocolon t)
 	  (declare (ignore colon atsign))
@@ -2361,7 +2362,7 @@
 (def-format-handler #\[ (start end)
   (multiple-value-bind (colon atsign params)
       (parse-params start nil :max 1 :nocolonatsign T)
-    (setq start (1+ (params-end start)))
+    (setq start (1+ (params-end *string* :start start)))
     (let* ((chunks (chunk-up start end))
 	   (innards (loop :for n :in chunks
 			  :for m :in (cdr chunks)
@@ -2383,7 +2384,7 @@
 
 (def-format-handler #\( (start end)
   (multiple-value-bind (colon atsign) (parse-params start nil)
-    (setq start (1+ (params-end start)))
+    (setq start (1+ (params-end *string* :start start)))
     (setq end (directive-start end))
     `(progn (push-char-mode xp ,(cond ((and colon atsign) :UP)
 				      (colon :CAP1)
@@ -2409,7 +2410,7 @@
     (let* ((force-once (colonp (1- end)))
 	   (n (car params))
 	   (bounded (not (eql n -1))))
-      (setq start (1+ (params-end start)))
+      (setq start (1+ (params-end *string* :start start)))
       (setq end (directive-start end))
       (car (maybe-bind bounded 'N n ;must be outermost if is V or #
 	     (maybe-bind (not (> end start)) 'FN  ;must be second
@@ -2493,7 +2494,7 @@
 
 (defun handle-logical-block (start end)
   (multiple-value-bind (colon atsign) (parse-params start nil)
-    (setq start (1+ (params-end start)))
+    (setq start (1+ (params-end *string* :start start)))
     (let* ((chunks (chunk-up start end))
 	   (on-each-line?
 	     (and (cddr chunks) (atsignp (1- (cadr chunks)))))
