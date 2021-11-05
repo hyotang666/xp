@@ -128,8 +128,7 @@
 
 #-(or :franz-inc)(eval-when (:execute :load-toplevel :compile-toplevel)
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
-(defun output-position  (&optional (s *standard-output*)) (declare (ignore s)) nil) )
+(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
 
 
 ;Definitions for FRANZ Common Lisp. (Only verified for the version 1.3
@@ -137,8 +136,7 @@
 
 #+:franz-inc(eval-when (:execute :load-toplevel :compile-toplevel)
 (defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil)
-(defun output-position  (&optional (s *standard-output*)) (excl::charpos s)) )
+(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
 
 
 (declaim (type (or null integer) *locating-circularities*))
@@ -380,7 +378,6 @@
   (defvar block-stack-entry-size 1)
   (defvar prefix-stack-entry-size 5)
   (defvar queue-entry-size 7)
-  (defvar buffer-entry-size 1)
   (defvar prefix-entry-size 1)
   (defvar suffix-entry-size 1))
 
@@ -388,7 +385,6 @@
   (defvar block-stack-min-size #.(* 35. block-stack-entry-size))
   (defvar prefix-stack-min-size #.(* 30. prefix-stack-entry-size))
   (defvar queue-min-size #.(* 75. queue-entry-size))
-  (defvar buffer-min-size 256.)
   (defvar prefix-min-size 256.)
   (defvar suffix-min-size 256.))
 
@@ -440,7 +436,8 @@
 (deftype prefix-stack-entry ()
   '(or prefix-ptr suffix-ptr non-blank-prefix-ptr initial-prefix-ptr section-start-line))
 
-(defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream)
+(defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream
+			 pxp.buffer:buffer)
   ((base-stream :initform nil :initarg :base-stream
        	 :type (or null stream) :accessor base-stream
        	 :documentation "The stream io eventually goes to.")
@@ -471,35 +468,6 @@
        	   "that is rightmost in the queue started."))
    (block-stack-ptr :initform nil :initarg :block-stack-ptr
        	     :accessor block-stack-ptr)
-   (buffer
-     :initform (make-array #.buffer-min-size :element-type 'character)
-     :initarg :buffer :accessor buffer
-     :documentation
-     #.(cl:format nil "~@{~A~^~%~}"
-       	   "This is a vector of characters (eg a string) that builds up the"
-       	   "line images that will be printed out."))
-   (charpos
-     :initform nil :initarg :charpos :accessor charpos
-     :documentation
-     #.(cl:format nil "~@{~A~^~%~}"
-       	   "The output character position of the first character in the buffer"
-       	   "(non-zero only if a partial line has been output)."))
-   (buffer-ptr
-     :initform nil :initarg :buffer-ptr :accessor buffer-ptr
-     :documentation
-     "The buffer position where the next character should be inserted in the string.")
-   (buffer-offset
-     :initform nil :initarg :buffer-offset :accessor buffer-offset
-     :documentation
-     #.(cl:format nil "~@{~A~^~%~}"
-       	   "Used in computing total lengths."
-       	   "It is changed to reflect all shifting and insertion of prefixes so that"
-       	   "total length computes things as they would be if they were"
-       	   "all on one line.  Positions are kept three different ways"
-       	   "Buffer position (eg BUFFER-PTR)"
-       	   "Line position (eg (+ BUFFER-PTR CHARPOS)).  Indentations are stored in this form."
-       	   "Total position if all on one line (eg (+ BUFFER-PTR BUFFER-OFFSET))"
-       	   " Positions are stored in this form."))
    (queue :initform (make-array #.queue-min-size :element-type 'Qentry)
           :initarg :queue :accessor queue
           :documentation
@@ -509,7 +477,7 @@
    (qright :initform nil :initarg :qright :accessor qright
            :documentation "Point to the last entry enqueued."
            )
-   (prefix :initform (make-array #.buffer-min-size :element-type 'character)
+   (prefix :initform (make-array #.pxp.buffer:buffer-min-size :element-type 'character)
            :initarg :prefix :accessor prefix
            :documentation
            "Stores the prefix that should be used at the start of the line")
@@ -521,7 +489,7 @@
      are nested at the moment things are taken off the queue and printed.")
    (prefix-stack-ptr :initform nil :initarg :prefix-stack-ptr
        	      :accessor prefix-stack-ptr)
-   (suffix :initform (make-array #.buffer-min-size :element-type 'character)
+   (suffix :initform (make-array #.pxp.buffer:buffer-min-size :element-type 'character)
            :initarg :suffix :accessor suffix
            :documentation
            "Stores the suffixes that have to be printed to close of the current
@@ -534,20 +502,11 @@
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
 
-(defmacro LP<-BP (xp &optional (ptr nil))
-  (if (null ptr) (setq ptr `(buffer-ptr ,xp)))
-  `(+ ,ptr (charpos ,xp)))
-(defmacro TP<-BP (xp)
-  `(+ (buffer-ptr ,xp) (buffer-offset ,xp)))
-(defmacro BP<-LP (xp ptr)
-  `(- ,ptr (charpos ,xp)))
-(defmacro BP<-TP (xp ptr)
-  `(- ,ptr (buffer-offset ,xp)))
 ;This does not tell you the line position you were at when the TP
 ;was set, unless there have been no newlines or indentation output
 ;between ptr and the current output point.
 (defmacro LP<-TP (xp ptr)
-  `(LP<-BP ,xp (BP<-TP ,xp ,ptr)))
+  `(pxp.buffer:LP<-BP ,xp (pxp.buffer:BP<-TP ,xp ,ptr)))
 
 ;We don't use adjustable vectors or any of that, because we seldom have
 ;to actually extend and non-adjustable vectors are a lot faster in
@@ -649,7 +608,7 @@
   (check-size xp queue (Qright xp))
   (setf (Qtype xp (Qright xp)) type)
   (setf (Qkind xp (Qright xp)) kind)
-  (setf (Qpos xp (Qright xp)) (TP<-BP xp))
+  (setf (Qpos xp (Qright xp)) (pxp.buffer:TP<-BP xp))
   (setf (Qdepth xp (Qright xp)) (depth-in-blocks xp))
   (setf (Qend xp (Qright xp)) nil)
   (setf (Qoffset xp (Qright xp)) nil)
@@ -669,7 +628,7 @@
         (cl:format s "not currently in use")
         (cl:format s "outputting to ~S" (base-stream xp)))
     (when (base-stream xp)
-      (cl:format s "~&buffer= ~S" (subseq (buffer xp) 0 (max (buffer-ptr xp) 0)))
+      (pxp.buffer:show xp s)
       (when (not *describe-xp-streams-fully*) (cl:princ " ..." s))
       (when *describe-xp-streams-fully*
         (cl:format s "~&   pos   _123456789_123456789_123456789_123456789")
@@ -684,8 +643,8 @@
               ((minusp (block-stack-ptr xp)) (setf (block-stack-ptr xp) save))
             (cl:format s " ~D" (section-start xp))
             (pop-block-stack xp)))
-        (cl:format s "~&linel= ~D charpos= ~D buffer-ptr= ~D buffer-offset= ~D"
-                     (linel xp) (charpos xp) (buffer-ptr xp) (buffer-offset xp))
+        (cl:format s "~&linel= ~D" (linel xp))
+	(pxp.buffer:show-detail xp s)
         (unless (minusp (prefix-stack-ptr xp))
           (cl:format s "~&prefix= ~S"
                        (subseq (prefix xp) 0 (max (prefix-ptr xp) 0)))
@@ -698,7 +657,7 @@
               (/ (- p (Qleft xp)) #.queue-entry-size)
               (Qtype xp p)
               (if (member (Qtype xp p) '(:newline :ind)) (Qkind xp p) "")
-              (BP<-TP xp (Qpos xp p))
+              (pxp.buffer:BP<-TP xp (Qpos xp p))
               (Qdepth xp p)
               (if (not (member (Qtype xp p) '(:newline :start-block))) ""
                   (and (Qend xp p)
@@ -769,13 +728,11 @@
   (setf (char-mode-counter xp) 0)
   (setf (depth-in-blocks xp) 0)
   (setf (block-stack-ptr xp) 0)
-  (setf (charpos xp) (cond ((output-position stream)) (T 0)))
   (setf (section-start xp) 0)
-  (setf (buffer-ptr xp) 0)
-  (setf (buffer-offset xp) (charpos xp))
   (setf (Qleft xp) 0)
   (setf (Qright xp) #.(- queue-entry-size))
   (setf (prefix-stack-ptr xp) #.(- prefix-stack-entry-size))
+  (pxp.buffer:initialize xp stream)
   xp)
 
 ;The char-mode stuff is a bit tricky.
@@ -867,7 +824,7 @@
 		     (decf limit (suffix-ptr ,xp))))
 		 (cond ((Qend ,xp ,Qentry)
 			(> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
-		       ((or force-newlines? (> (LP<-BP ,xp) limit)) T)
+		       ((or force-newlines? (pxp.buffer:too-large-p xp :max limit)) T)
 		       (T (return nil))))) ; wait until later to decide.
 	     (misering? (xp)
                `(and *print-miser-width*
@@ -901,7 +858,7 @@
       (:end-block (pop-prefix-stack xp) (setf (Qleft xp) (Qnext (Qleft xp))))
       (T ; :newline
        (when (case (Qkind xp (Qleft xp))
-	       (:fresh (not (zerop (LP<-BP xp))))
+	       (:fresh (not (pxp.buffer:left-most-p xp)))
 	       (:miser (misering? xp))
 	       (:fill (or (misering? xp)
 			  (> (line-no xp) (section-start-line xp))
@@ -917,7 +874,7 @@
 (declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
 (defun force-some-output (xp)
   (attempt-to-output xp nil nil)
-  (when (> (buffer-ptr xp) (linel xp)) ;only if printing off end of line
+  (when (> (pxp.buffer:buffer-ptr xp) (linel xp)) ;only if printing off end of line
     (attempt-to-output xp T T))
   (values))
 
@@ -927,78 +884,70 @@
 ;this is important so that when things are longer than a line they
 ;end up getting printed in chunks of size LINEL.
 (defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
-  (when (> (buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (let ((new-buffer-end (1+ (buffer-ptr xp))))
-    (check-size xp buffer new-buffer-end)
-    (if (char-mode xp) (setq char (handle-char-mode xp char)))
-    (setf (char (buffer xp) (buffer-ptr xp)) char)
-    (setf (buffer-ptr xp) new-buffer-end))
-  (values))
+(when (> (pxp.buffer:buffer-ptr xp) (linel xp))
+(force-some-output xp))
+(pxp.buffer:add-char (if (char-mode xp)
+		 (handle-char-mode xp char)
+		 char)
+	       xp)
+(values))
 
 
 (declaim (ftype (function (character xp-structure) (values &optional))
-		write-char+))
+	write-char+))
 (defun write-char+ (char xp)
-  (if (eql char #\newline) (pprint-newline+ :unconditional xp)
-      (write-char++ char xp))
-  (values))
+(if (eql char #\newline) (pprint-newline+ :unconditional xp)
+(write-char++ char xp))
+(values))
 
 
 (declaim (ftype (function (string xp-structure
-				  (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit))
-			  (values &optional))
-		write-string+++))
+			  (mod #.array-total-size-limit)
+			  (mod #.array-total-size-limit))
+		  (values &optional))
+	write-string+++))
 ; never forces output; therefore safe to call from within output-line.
 (defun write-string+++ (string xp start end)
-  (let ((new-buffer-end (+ (buffer-ptr xp) (- end start))))
-    (check-size xp buffer new-buffer-end)
-    (loop :with buffer = (buffer xp)
-	  :for i :upfrom (buffer-ptr xp)
-	  :for j :upfrom start :below end
-	  :do (setf (char buffer i)
-		      (if (char-mode xp)
-			(handle-char-mode xp (char string j))
-			(char string j))))
-    (setf (buffer-ptr xp) new-buffer-end))
-  (values))
-
+(pxp.buffer:add-string string xp :start start :end end
+		 :mode (if (char-mode xp)
+			 (lambda (char) (handle-char-mode xp char))
+			 #'identity))
+(values))
 
 (declaim (ftype (function (string xp-structure
-				  (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit))
-			  (values &optional))
-		write-string++))
+			  (mod #.array-total-size-limit)
+			  (mod #.array-total-size-limit))
+		  (values &optional))
+	write-string++))
 (defun write-string++ (string xp start end)
-  (when (> (buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (write-string+++ string xp start end))
+(when (> (pxp.buffer:buffer-ptr xp) (linel xp))
+(force-some-output xp))
+(write-string+++ string xp start end))
 
 
 (declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit))
-			  (values null &optional))
-		write-string+))
+			  (mod #.array-total-size-limit))
+		  (values null &optional))
+	write-string+))
 (defun write-string+ (string xp start end)
-  (loop :for s = start :then (1+ sub-end)
-	:for next-newline = (position #\newline string :test #'char= :start s :end end)
-	:for sub-end = (or next-newline end)
-	:do (write-string++ string xp s sub-end)
-	    (when (null next-newline)
-	      (loop-finish))
-	    (pprint-newline+ :unconditional xp)))
+(loop :for s = start :then (1+ sub-end)
+:for next-newline = (position #\newline string :test #'char= :start s :end end)
+:for sub-end = (or next-newline end)
+:do (write-string++ string xp s sub-end)
+    (when (null next-newline)
+      (loop-finish))
+    (pprint-newline+ :unconditional xp)))
 
 (deftype tab-kind ()
-  '(member :section :line-relative :section-relative :line))
+'(member :section :line-relative :section-relative :line))
 
 
 (declaim (ftype (function (tab-kind
-			   (integer 0 *)
-			   (integer 0 *)
-			   xp-structure)
-			  (values &optional))
-		pprint-tab+))
+		   (integer 0 *)
+		   (integer 0 *)
+		   xp-structure)
+		  (values &optional))
+	pprint-tab+))
 (defun pprint-tab+ (kind colnum colinc xp)
   (let ((indented? nil) (relative? nil))
     (case kind
@@ -1006,24 +955,21 @@
       (:line-relative (setq relative? T))
       (:section-relative (setq indented? T relative? T)))
     (let* ((current
-	     (if (not indented?) (LP<-BP xp)
-		 (- (TP<-BP xp) (section-start xp))))
+	     (if (not indented?) (pxp.buffer:LP<-BP xp)
+	       (- (pxp.buffer:TP<-BP xp) (section-start xp))))
 	   (new
 	     (if (zerop colinc)
-		 (if relative? (+ current colnum) (max colnum current))
-		 (cond (relative?
-			(* colinc (floor (+ current colnum colinc -1) colinc)))
-		       ((> colnum current) colnum)
-		       (T (+ colnum
-			     (* colinc
-				(floor (+ current (- colnum) colinc) colinc)))))))
+	       (if relative? (+ current colnum) (max colnum current))
+	       (cond (relative?
+		       (* colinc (floor (+ current colnum colinc -1) colinc)))
+		     ((> colnum current) colnum)
+		     (T (+ colnum
+			   (* colinc
+			      (floor (+ current (- colnum) colinc) colinc)))))))
 	   (length (- new current)))
       (when (plusp length)
 	(if (char-mode xp) (handle-char-mode xp #\space))
-	(let ((end (+ (buffer-ptr xp) length)))
-	  (check-size xp buffer end)
-	  (fill (buffer xp) #\space :start (buffer-ptr xp) :end end)
-	  (setf (buffer-ptr xp) end)))))
+	(pxp.buffer:skip-to length xp))))
   (values))
 
 ;note following is smallest number >= x that is a multiple of colinc
@@ -1042,7 +988,7 @@
 	       (not (> (depth-in-blocks xp) (Qdepth xp ptr)))
 	       (member (Qtype xp ptr) '(:newline :start-block)))
       (setf (Qend xp ptr) (- (Qright xp) ptr))))
-  (setf (section-start xp) (TP<-BP xp))
+  (setf (section-start xp) (pxp.buffer:TP<-BP xp))
   (when (and (member kind '(:fresh :unconditional)) (char-mode xp))
     (handle-char-mode xp #\newline))
   (when (member kind '(:fresh :unconditional :mandatory))
@@ -1060,13 +1006,12 @@
   (when prefix-string (write-string++ prefix-string xp 0 (length prefix-string)))
   (if (and (char-mode xp) on-each-line?)
       (setq prefix-string
-	    (subseq (buffer xp) (- (buffer-ptr xp) (length prefix-string))
-		    (buffer-ptr xp))))
+	    (pxp.buffer:prefix xp :rewind (length prefix-string))))
   (push-block-stack xp)
   (enqueue xp :start-block nil
 	   (if on-each-line? (cons suffix-string prefix-string) suffix-string))
   (incf (depth-in-blocks xp))	      ;must be after enqueue
-  (setf (section-start xp) (TP<-BP xp))
+  (setf (section-start xp) (pxp.buffer:TP<-BP xp))
   (values))
 
 
@@ -1098,11 +1043,8 @@
 (declaim (ftype (function (xp-structure) (values &optional)) flush))
 (defun flush (xp)
   (unless *locating-circularities*
-    (cl:write-string
-       (buffer xp) (base-stream xp) :end (buffer-ptr xp)))
-  (incf (buffer-offset xp) (buffer-ptr xp))
-  (incf (charpos xp) (buffer-ptr xp))
-  (setf (buffer-ptr xp) 0)
+    (pxp.buffer:write-to (base-stream xp) xp))
+  (pxp.buffer:flush xp)
   (values))
 
 ;This prints out a line of stuff.
@@ -1111,15 +1053,14 @@
 (declaim (ftype (function (xp-structure Qindex)
 			  (values &optional)) output-line))
 (defun output-line (xp Qentry)
-  (let* ((out-point (BP<-TP xp (Qpos xp Qentry)))
-	 (last-non-blank (position #\space (buffer xp) :test-not #'char=
-				   :from-end T :end out-point))
+  (let* ((out-point (pxp.buffer:BP<-TP xp (Qpos xp Qentry)))
+	 (last-non-blank (pxp.buffer:last-non-blank xp :end out-point))
 	 (end (cond ((member (Qkind xp Qentry) '(:fresh :unconditional)) out-point)
 		    (last-non-blank (1+ last-non-blank))
 		    (T 0)))
 	 (line-limit-exit (and (line-limit xp) (not (> (line-limit xp) (line-no xp))))))
     (when line-limit-exit
-      (setf (buffer-ptr xp) end)          ;truncate pending output.
+      (setf (pxp.buffer:buffer-ptr xp) end)          ;truncate pending output.
       (write-string+++ " .." xp 0 3)
       (reverse-string-in-place (suffix xp) 0 (suffix-ptr xp))
       (write-string+++ (suffix xp) xp 0 (suffix-ptr xp))
@@ -1128,27 +1069,23 @@
       (throw 'line-limit-abbreviation-exit T))
     (incf (line-no xp))
     (unless *locating-circularities*
-      (cl:write-line
-          (buffer xp) (base-stream xp) :end end)))
+      (pxp.buffer:write-to (base-stream xp) xp :end end)
+      (cl:terpri (base-stream xp))))
   (values))
 
 
 (declaim (ftype (function (xp-structure Qindex) (values &optional)) setup-for-next-line))
 (defun setup-for-next-line (xp Qentry)
-  (let* ((out-point (BP<-TP xp (Qpos xp Qentry)))
+  (let* ((out-point (pxp.buffer:BP<-TP xp (Qpos xp Qentry)))
 	 (prefix-end
 	   (cond ((member (Qkind xp Qentry) '(:unconditional :fresh))
 		  (non-blank-prefix-ptr xp))
 		 (T (prefix-ptr xp))))
 	 (change (- prefix-end out-point)))
-    (setf (charpos xp) 0)
-    (when (plusp change)                  ;almost never happens
-      (check-size xp buffer (+ (buffer-ptr xp) change)))
-    (replace (buffer xp) (buffer xp) :start1 prefix-end
-	     :start2 out-point :end2 (buffer-ptr xp))
-    (replace (buffer xp) (prefix xp) :end2 prefix-end)
-    (incf (buffer-ptr xp) change)
-    (decf (buffer-offset xp) change)
+    (pxp.buffer:shift xp change
+		      :prefix (prefix xp)
+		      :prefix-end prefix-end
+		      :out-point out-point)
     (when (not (member (Qkind xp Qentry) '(:unconditional :fresh)))
       (setf (section-start-line xp) (line-no xp))))
   (values))
@@ -1307,7 +1244,7 @@
       (when (and *locating-circularities*
                  (zerop *locating-circularities*)	;No circularities.
                  (= (line-no xp) 1)	     	;Didn't suppress line.
-                 (zerop (buffer-offset xp)))	;Didn't suppress partial line.
+                 (zerop (pxp.buffer:buffer-offset xp)))	;Didn't suppress partial line.
         (setq *locating-circularities* nil))	;print what you have got.
       (when (catch 'line-limit-abbreviation-exit
               (attempt-to-output xp nil T) nil)
@@ -1533,7 +1470,7 @@
   (setq stream (decode-stream-arg stream))
   (cond ((xp-structure-p stream)
 	 (attempt-to-output stream T T) ;ok because we want newline
-	 (when (not (zerop (LP<-BP stream)))
+	 (when (not (pxp.buffer:left-most-p stream))
 	   (pprint-newline+ :fresh stream)
 	   T))
 	(T (and (cl:fresh-line stream) t))))
