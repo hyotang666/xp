@@ -1903,22 +1903,23 @@
       (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
 
 
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   (mod #.array-total-size-limit))
+(declaim (ftype (function (string &key
+				  (:start (mod #.array-total-size-limit))
+				  (:end (mod #.array-total-size-limit)))
 			  (values (or null (mod #.array-total-size-limit))
 				  (or null (mod #.array-total-size-limit))
 				  &optional))
 		next-directive1))
-(defun next-directive1 (start end)
-  (let ((i (position #\~ *string* :start start :end end)))
+(defun next-directive1 (control-string &key start end)
+  (let ((i (position #\~ control-string :start start :end end)))
     (if (null i)
       (values nil nil)
-      (let ((j (params-end *string* :start (1+ i))))
-	(if (not (char= (aref *string* j) #\/))
+      (let ((j (params-end control-string :start (1+ i))))
+	(if (not (char= (aref control-string j) #\/))
 	  (values i j)
-	  (values i (or (position #\/ *string* :start (1+ j) :end end)
+	  (values i (or (position #\/ control-string :start (1+ j) :end end)
 			(err 3 "Matching / missing"
-			     (position #\/ *string* :start start)))))))))
+			     (position #\/ control-string :start start)))))))))
 
 
 (declaim (ftype (function ((mod #.array-total-size-limit)
@@ -1931,14 +1932,14 @@
 (defun next-directive (start end)
   (let (i j ii k count c close
 	(pairs '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))
-    (multiple-value-setq (i j) (next-directive1 start end))
+    (multiple-value-setq (i j) (next-directive1 *string* :start start :end end))
     (when i
       (setq c (aref *string* j))
       (setq close (cdr (assoc c pairs)))
       (when close
 	(setq k j count 0)
 	(loop
-	  (multiple-value-setq (ii k) (next-directive1 k end))
+	  (multiple-value-setq (ii k) (next-directive1 *string* :start k :end end))
 	  (when (null ii) (err 4 "No matching close directive" j))
 	  (when (eql (aref *string* k) c) (incf count))
 	  (when (eql (aref *string* k) close) (decf count)
@@ -2123,7 +2124,7 @@
 (defun fancy-directives-p (*string*)
   (let (i (j 0) (end (length *string*)) c)
     (loop
-      (multiple-value-setq (i j) (next-directive1 j end))	
+      (multiple-value-setq (i j) (next-directive1 *string* :start j :end end))	
       (when (not i) (return nil))
       (setq c (aref *string* j))
       (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
@@ -2453,7 +2454,7 @@
 (defun num-args-in-directive (start end)
   (let ((n 0) c i j)
     (incf n (num-args-in-args start T))
-    (multiple-value-setq (j i) (next-directive1 start end))
+    (multiple-value-setq (j i) (next-directive1 *string* :start start :end end))
     (loop
       (multiple-value-setq (c i j) (next-directive j end))
       (when (null c) (return n))
