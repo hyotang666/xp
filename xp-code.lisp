@@ -1880,8 +1880,8 @@
 (defun position-in (set start)
   (position-if #'(lambda (c) (find c set)) *string* :start start))
 
-(defun position-not-in (set start)
-  (position-if-not #'(lambda (c) (find c set)) *string* :start start))
+(defun position-not-in (string set &key start)
+  (position-if-not #'(lambda (c) (find c set)) string :start start))
 
 
 (declaim (ftype (function ((mod #.array-total-size-limit))
@@ -1890,7 +1890,7 @@
 (defun params-end (start) ;start points just after ~
   (let ((j start) (end (length *string*)))
     (loop
-      (setq j (position-not-in "+-0123456789,Vv#:@" j))
+      (setq j (position-not-in *string* "+-0123456789,Vv#:@" :start j))
       (when (null j) (err 1 "missing directive" (1- start)))
       (when (not (eq (aref *string* j) #\')) (return j))
       (incf j)
@@ -1974,7 +1974,7 @@
 	    ((char= c #\#) (push (num-args) params) (incf i))
 	    ((char= c #\') (incf i) (push (aref *string* i) params) (incf i))
 	    ((char= c #\,) (push nil params))
-	    (T (setq j (position-not-in "+-0123456789" i))
+	    (T (setq j (position-not-in *string* "+-0123456789" :start i))
 	       (if (= i j) (return nil))
 	       (push (parse-integer *string* :start i :end j :radix 10.) params)
 	       (setq i j)))
@@ -2130,7 +2130,7 @@
 (defun num-args-in-args (start &optional (err nil))
   (let ((n 0) (i (1- start)) c)
     (loop
-      (setq i (position-not-in "+-0123456789," (1+ i)))
+      (setq i (position-not-in *string* "+-0123456789," :start (1+ i)))
       (setq c (aref *string* i))
       (cond ((or (char= c #\V) (char= c #\v)) (incf n))
 	    ((char= c #\#)
