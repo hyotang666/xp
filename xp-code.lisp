@@ -1500,42 +1500,6 @@
 ;Any format string that is converted to a function is always printed
 ;via an XP stream (See formatter).
 
-(defun format (stream string-or-fn &rest args)
-  (cond ((stringp stream)
-	 (cl:format stream "~A"
-		      (with-output-to-string (stream)
-			(apply #'format stream string-or-fn args)))
-	 nil)
-	((null stream)
-	 (with-output-to-string (stream)
-	   (apply #'format stream string-or-fn args)))
-	(T (if (eq stream T) (setq stream *standard-output*))
-	   (when (stringp string-or-fn)
-	     (setq string-or-fn (process-format-string string-or-fn nil)))
-	   (cond ((not (stringp string-or-fn))
-		  (apply string-or-fn stream args))
-		 ((xp-structure-p stream)
-		  (apply #'using-format stream string-or-fn args))
-		 (T (apply #'cl:format stream string-or-fn args)))
-	   nil)))
-
-(defvar *format-string-cache* T)
-
-
-(declaim (ftype (function ((or string function) boolean)
-			  (values (or string function) &optional))
-		process-format-string))
-(defun process-format-string (string-or-fn force-fn?)
-  (cond ((not (stringp string-or-fn)) string-or-fn) ;called from ~? too.
-	((not *format-string-cache*)
-	 (maybe-compile-format-string string-or-fn force-fn?))
-	(T (when (not (hash-table-p *format-string-cache*))
-	     (setq *format-string-cache* (make-hash-table :test #'eq)))
-	   (let ((value (gethash string-or-fn *format-string-cache*)))
-	     (when (or (not value) (and force-fn? (stringp value)))
-	       (setq value (maybe-compile-format-string string-or-fn force-fn?))
-	       (setf (gethash string-or-fn *format-string-cache*) value))
-	     value))))
 
 (defmethod trivial-gray-streams:stream-line-column ((output xp-structure)) nil)
 (defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
@@ -1726,6 +1690,149 @@
 
 (defvar *fn-table* (make-hash-table) "used to access fns for commands")
 
+;;;; CONDITION
+
+(define-condition failed-to-compile (warning)
+  ((id :initarg :id :reader error-id
+       :documentation "Used to identify error point in the test.")
+   (control-string :initarg :control-string :reader control-string)
+   (error-point :initarg :error-point :reader error-point
+		:documentation "The index where the error is occured.")
+   (message :initarg :message :reader error-message))
+  (:report (lambda (this output)
+	     (funcall (cl:formatter "XP: ~A~%~S~%~V@T|")
+		      output
+		      (error-message this)
+		      (control-string this)
+		      (1+ (error-point this))))))
+
+(defvar *xp-condition* 'failed-to-compile
+  "The default condition for ERR.")
+
+(defun failed-to-compile (id msg control-string i)
+  (error (make-condition *xp-condition*
+			 :id id
+			 :control-string control-string
+			 :message msg
+			 :error-point i)))
+
+;; MEMO: FIXME(?) Seems to not be used. Should be removed?
+(defun position-in (set start)
+  (position-if #'(lambda (c) (find c set)) *string* :start start))
+
+(defun position-not-in (string set &key start)
+  (position-if-not #'(lambda (c) (find c set)) string :start start))
+
+
+(declaim (ftype (function (string &key (:start (mod #.array-total-size-limit)))
+			  (values (mod #.array-total-size-limit) &optional))
+		params-end))
+(defun params-end (control-string &key start) ;start points just after ~
+  "Return an end position of the format directive parameters."
+  (let ((end (length control-string)))
+    (labels ((rec (position)
+	       (cond
+	         ((null position)
+		  (failed-to-compile 1 "missing directive" control-string (1- start)))
+	         ((not (char= (aref control-string position) #\'))
+		  position)
+	         ((= (1+ position) end)
+		  (failed-to-compile 2 "No character after '" control-string position))
+	         (t
+		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
+      (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
+
+
+(declaim (ftype (function (string &key
+				  (:start (mod #.array-total-size-limit))
+				  (:end (mod #.array-total-size-limit)))
+			  (values (or null (mod #.array-total-size-limit))
+				  (or null (mod #.array-total-size-limit))
+				  &optional))
+		next-directive1))
+(defun next-directive1 (control-string &key start end)
+  "Return two values.
+1: Start position of param i.e. tilda, or nil.
+2: End position of param, or nil."
+  (let ((i (position #\~ control-string :start start :end end)))
+    (if (null i)
+      (values nil nil)
+      (let ((j (params-end control-string :start (1+ i))))
+	(if (not (char= (aref control-string j) #\/))
+	  (values i j)
+	  (values i (or (position #\/ control-string :start (1+ j) :end end)
+			(failed-to-compile 3 "Matching / missing"
+			     control-string (position #\/ control-string :start start)))))))))
+
+(declaim (ftype (function ((mod #.array-total-size-limit))
+			  (values boolean &optional))
+		colonp))
+(defun colonp (j) ;j points to directive name
+  (or (char= (aref *string* (1- j)) #\:)
+      (and (char= (aref *string* (1- j)) #\@)
+	   (char= (aref *string* (- j 2)) #\:))))
+
+(declaim (ftype (function ((mod #.array-total-size-limit))
+			  (values boolean &optional))
+		atsignp))
+(defun atsignp (j) ;j points to directive name
+  (or (char= (aref *string* (1- j)) #\@)
+      (and (char= (aref *string* (1- j)) #\:)
+	   (char= (aref *string* (- j 2)) #\@))))
+
+(declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
+(defun fancy-directives-p (*string*)
+  (let (i (j 0) (end (length *string*)) c)
+    (loop
+      (multiple-value-setq (i j) (next-directive1 *string* :start j :end end))	
+      (when (not i) (return nil))
+      (setq c (aref *string* j))
+      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
+	(return T)))))
+
+(declaim (ftype (function (string boolean) (values (or string function) &optional))
+		maybe-compile-format-string))
+(defun maybe-compile-format-string (string force-fn?)
+  (if (not (or force-fn? (fancy-directives-p string))) string
+      (eval `(formatter ,string))))
+
+(defvar *format-string-cache* T)
+
+(declaim (ftype (function ((or string function) boolean)
+			  (values (or string function) &optional))
+		process-format-string))
+(defun process-format-string (string-or-fn force-fn?)
+  (cond ((not (stringp string-or-fn)) string-or-fn) ;called from ~? too.
+	((not *format-string-cache*)
+	 (maybe-compile-format-string string-or-fn force-fn?))
+	(T (when (not (hash-table-p *format-string-cache*))
+	     (setq *format-string-cache* (make-hash-table :test #'eq)))
+	   (let ((value (gethash string-or-fn *format-string-cache*)))
+	     (when (or (not value) (and force-fn? (stringp value)))
+	       (setq value (maybe-compile-format-string string-or-fn force-fn?))
+	       (setf (gethash string-or-fn *format-string-cache*) value))
+	     value))))
+
+(defun format (stream string-or-fn &rest args)
+  (cond ((stringp stream)
+	 (cl:format stream "~A"
+		      (with-output-to-string (stream)
+			(apply #'format stream string-or-fn args)))
+	 nil)
+	((null stream)
+	 (with-output-to-string (stream)
+	   (apply #'format stream string-or-fn args)))
+	(T (if (eq stream T) (setq stream *standard-output*))
+	   (when (stringp string-or-fn)
+	     (setq string-or-fn (process-format-string string-or-fn nil)))
+	   (cond ((not (stringp string-or-fn))
+		  (apply string-or-fn stream args))
+		 ((xp-structure-p stream)
+		  (apply #'using-format stream string-or-fn args))
+		 (T (apply #'cl:format stream string-or-fn args)))
+	   nil)))
+
+
 ;Each of these functions expect to get called with two arguments
 ;start and end.  Start points to the first character after the ~
 ;marking the command.  End points to the first character after the
@@ -1875,80 +1982,6 @@
   `(function
     (lambda (s &rest args)
       (formatter-in-package ,string ,(package-name *package*)))))
-
-;;;; CONDITION
-
-(define-condition failed-to-compile (warning)
-  ((id :initarg :id :reader error-id
-       :documentation "Used to identify error point in the test.")
-   (control-string :initarg :control-string :reader control-string)
-   (error-point :initarg :error-point :reader error-point
-		:documentation "The index where the error is occured.")
-   (message :initarg :message :reader error-message))
-  (:report (lambda (this output)
-	     (funcall (cl:formatter "XP: ~A~%~S~%~V@T|")
-		      output
-		      (error-message this)
-		      (control-string this)
-		      (1+ (error-point this))))))
-
-(defvar *xp-condition* 'failed-to-compile
-  "The default condition for ERR.")
-
-(defun failed-to-compile (id msg control-string i)
-  (error (make-condition *xp-condition*
-			 :id id
-			 :control-string control-string
-			 :message msg
-			 :error-point i)))
-
-;; MEMO: FIXME(?) Seems to not be used. Should be removed?
-(defun position-in (set start)
-  (position-if #'(lambda (c) (find c set)) *string* :start start))
-
-(defun position-not-in (string set &key start)
-  (position-if-not #'(lambda (c) (find c set)) string :start start))
-
-
-(declaim (ftype (function (string &key (:start (mod #.array-total-size-limit)))
-			  (values (mod #.array-total-size-limit) &optional))
-		params-end))
-(defun params-end (control-string &key start) ;start points just after ~
-  "Return an end position of the format directive parameters."
-  (let ((end (length control-string)))
-    (labels ((rec (position)
-	       (cond
-	         ((null position)
-		  (failed-to-compile 1 "missing directive" control-string (1- start)))
-	         ((not (char= (aref control-string position) #\'))
-		  position)
-	         ((= (1+ position) end)
-		  (failed-to-compile 2 "No character after '" control-string position))
-	         (t
-		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
-      (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
-
-
-(declaim (ftype (function (string &key
-				  (:start (mod #.array-total-size-limit))
-				  (:end (mod #.array-total-size-limit)))
-			  (values (or null (mod #.array-total-size-limit))
-				  (or null (mod #.array-total-size-limit))
-				  &optional))
-		next-directive1))
-(defun next-directive1 (control-string &key start end)
-  "Return two values.
-1: Start position of param i.e. tilda, or nil.
-2: End position of param, or nil."
-  (let ((i (position #\~ control-string :start start :end end)))
-    (if (null i)
-      (values nil nil)
-      (let ((j (params-end control-string :start (1+ i))))
-	(if (not (char= (aref control-string j) #\/))
-	  (values i j)
-	  (values i (or (position #\/ control-string :start (1+ j) :end end)
-			(failed-to-compile 3 "Matching / missing"
-			     control-string (position #\/ control-string :start start)))))))))
 
 
 (declaim (ftype (function (string &key
@@ -2123,12 +2156,6 @@
 ;reported in a file without stopping the compilation of the file.
 
 
-(declaim (ftype (function (string boolean) (values (or string function) &optional))
-		maybe-compile-format-string))
-(defun maybe-compile-format-string (string force-fn?)
-  (if (not (or force-fn? (fancy-directives-p string))) string
-      (eval `(formatter ,string))))
-
 ;COMPILE-FORMAT gets called to turn a bit of format control string into code.
 
 ;Only called after correct parse is known.
@@ -2161,16 +2188,6 @@
 	(setq spot j)))))
 
 
-(declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
-(defun fancy-directives-p (*string*)
-  (let (i (j 0) (end (length *string*)) c)
-    (loop
-      (multiple-value-setq (i j) (next-directive1 *string* :start j :end end))	
-      (when (not i) (return nil))
-      (setq c (aref *string* j))
-      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
-	(return T)))))
-
 
 (declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
 			  (values (or null (mod #.array-total-size-limit)) &optional))
@@ -2190,20 +2207,6 @@
 
 ;Both these only called if correct parse already known.
 
-
-(declaim (ftype (function ((mod #.array-total-size-limit))
-			  (values boolean &optional))
-		colonp
-		atsignp))
-(defun colonp (j) ;j points to directive name
-  (or (char= (aref *string* (1- j)) #\:)
-      (and (char= (aref *string* (1- j)) #\@)
-	   (char= (aref *string* (- j 2)) #\:))))
-
-(defun atsignp (j) ;j points to directive name
-  (or (char= (aref *string* (1- j)) #\@)
-      (and (char= (aref *string* (1- j)) #\:)
-	   (char= (aref *string* (- j 2)) #\@))))
 
 (def-format-handler #\/ (start end)
   (multiple-value-bind (colon atsign params) (parse-params start nil :max nil)
