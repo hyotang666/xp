@@ -1911,6 +1911,9 @@
 				  &optional))
 		next-directive1))
 (defun next-directive1 (control-string &key start end)
+  "Return two values.
+1: Start position of param i.e. tilda, or nil.
+2: End position of param, or nil."
   (let ((i (position #\~ control-string :start start :end end)))
     (if (null i)
       (values nil nil)
@@ -1930,21 +1933,46 @@
 				  &optional))
 		next-directive))
 (defun next-directive (start end)
-  (let (i j ii k count c close
-	(pairs '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))
-    (multiple-value-setq (i j) (next-directive1 *string* :start start :end end))
-    (when i
-      (setq c (aref *string* j))
-      (setq close (cdr (assoc c pairs)))
-      (when close
-	(setq k j count 0)
-	(loop
-	  (multiple-value-setq (ii k) (next-directive1 *string* :start k :end end))
-	  (when (null ii) (err 4 "No matching close directive" j))
-	  (when (eql (aref *string* k) c) (incf count))
-	  (when (eql (aref *string* k) close) (decf count)
-	    (when (minusp count) (setq j k) (return nil))))))
-    (values c i j)))
+  "Return three values.
+1: Next directive character or nil.
+2: Start position of params i.e. tilda, or nil.
+3: End position of params, or nil."
+  (multiple-value-bind (i j) (next-directive1 *string* :start start :end end)
+    (if (null i)
+      ;; No directives in format control string.
+      (values nil nil nil)
+      ;; Format control string has directives.
+      (let* ((directive (aref *string* j))
+	     (close (cdr (assoc directive '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))))
+	(if (null close)
+	  ;; Single directive. e.g. ~A, ~S etc.
+	  (values directive i j)
+	  ;; Paired directives.
+	  (labels ((rec (ii k count)
+		     (cond
+		       ((null ii)
+		        (err 4 "No matching close directive" j))
+		       ((char= (aref *string* k) directive)
+			;; Nest into.
+		        (multiple-value-call #'rec
+		          (next-directive1 *string* :start k :end end)
+		          (1+ count)))
+		       ((char= (aref *string* k) close)
+			;; Nest back.
+		        (if (minusp (1- count))
+			  ;; Got directive pair.
+		          (values directive i k)
+			  ;; Still not get its pair yet.
+		          (multiple-value-call #'rec
+		            (next-directive1 *string* :start k :end end)
+		            (1- count))))
+		       (t ;; Met single directive, ignore.
+			 (multiple-value-call #'rec
+		            (next-directive1 *string* :start k :end end)
+		            count)))))
+	    (multiple-value-call #'rec
+	      (next-directive1 *string* :start j :end end)
+	      0)))))))
 
 ;This gets called with start pointing to the character after the ~ that
 ;starts a command.  Defaults, is a list of default values for the
