@@ -1772,13 +1772,13 @@
       (and (char= (aref control-string (1- j)) #\@)
 	   (char= (aref control-string (- j 2)) #\:))))
 
-(declaim (ftype (function ((mod #.array-total-size-limit))
+(declaim (ftype (function (string (mod #.array-total-size-limit))
 			  (values boolean &optional))
 		atsignp))
-(defun atsignp (j) ;j points to directive name
-  (or (char= (aref *string* (1- j)) #\@)
-      (and (char= (aref *string* (1- j)) #\:)
-	   (char= (aref *string* (- j 2)) #\@))))
+(defun atsignp (control-string j) ;j points to directive name
+  (or (char= (aref control-string (1- j)) #\@)
+      (and (char= (aref control-string (1- j)) #\:)
+	   (char= (aref control-string (- j 2)) #\@))))
 
 (declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
 (defun fancy-directives-p (*string*)
@@ -2328,7 +2328,7 @@
 		  ,(pop params) ,(pop params) xp)))
 
 (def-format-handler #\* (start end) (declare (ignore end))
-  (if (atsignp (params-end *string* :start start))
+  (if (atsignp *string* (params-end *string* :start start))
       (multiple-value-bind (colon atsign params)
 	  (parse-params start '(0) :nocolon t)
 	  (declare (ignore colon atsign))
@@ -2510,7 +2510,7 @@
 	    ((eql c #\() (incf n (num-args-in-directive (1+ i) j)))
 	    ((find c "%&\|~") (incf n (num-args-in-args (1+ i) T)))
 	    ((eql c #\?)
-	     (when (atsignp j)
+	     (when (atsignp *string* j)
 	       (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
 	     (incf n 2))
 	    ((find c "AaSsDdBbOoXxRrCcFfEeGg$Pp")
@@ -2543,7 +2543,7 @@
     (setq start (1+ (params-end *string* :start start)))
     (let* ((chunks (chunk-up start end))
 	   (on-each-line?
-	     (and (cddr chunks) (atsignp (1- (cadr chunks)))))
+	     (and (cddr chunks) (atsignp *string* (1- (cadr chunks)))))
 	   (prefix
 	     (cond ((cddr chunks) (pop chunks)
 		    (subseq *string* start (directive-start (car chunks))))
@@ -2563,7 +2563,7 @@
 	     (bind-initial
 	       `((pprint-logical-block+ (xp ,(args) ,prefix ,suffix ,on-each-line?
 					    ,(not (and *at-top* atsign)) ,atsign)
-		   ,@(fill-transform (atsignp (1- end))
+		   ,@(fill-transform (atsignp *string* (1- end))
 		       (let ((*get-arg-carefully* T)
 			     (*at-top* (and *at-top* atsign))
 			     (*inner-end* 'logical-block)
