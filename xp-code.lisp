@@ -1764,13 +1764,13 @@
 			(failed-to-compile 3 "Matching / missing"
 			     control-string (position #\/ control-string :start start)))))))))
 
-(declaim (ftype (function ((mod #.array-total-size-limit))
+(declaim (ftype (function (string (mod #.array-total-size-limit))
 			  (values boolean &optional))
 		colonp))
-(defun colonp (j) ;j points to directive name
-  (or (char= (aref *string* (1- j)) #\:)
-      (and (char= (aref *string* (1- j)) #\@)
-	   (char= (aref *string* (- j 2)) #\:))))
+(defun colonp (control-string j) ;j points to directive name
+  (or (char= (aref control-string (1- j)) #\:)
+      (and (char= (aref control-string (1- j)) #\@)
+	   (char= (aref control-string (- j 2)) #\:))))
 
 (declaim (ftype (function ((mod #.array-total-size-limit))
 			  (values boolean &optional))
@@ -1787,7 +1787,7 @@
       (multiple-value-setq (i j) (next-directive1 *string* :start j :end end))	
       (when (not i) (return nil))
       (setq c (aref *string* j))
-      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
+      (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp *string* j)))
 	(return T)))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
@@ -2421,7 +2421,7 @@
 		      (failed-to-compile 14 "Too many clauses in ~~@[...~~]" *string* (1- start)))
 		    `(cond ((car args) ,@ (car innards)) (T ,(get-arg))))
 	    (T (let* ((j -1) (len (- (length chunks) 2))
-		      (else? (colonp (1- (nth len chunks)))))
+		      (else? (colonp *string* (1- (nth len chunks)))))
 		 `(case ,(if params (car params) (get-arg))
 		    ,@(mapcar #'(lambda (unit)
 				  (incf j)
@@ -2453,7 +2453,7 @@
 (def-format-handler #\{ (start end)
   (multiple-value-bind (colon atsign params)
       (parse-params start '(-1) :max 1)
-    (let* ((force-once (colonp (1- end)))
+    (let* ((force-once (colonp *string* (1- end)))
 	   (n (car params))
 	   (bounded (not (eql n -1))))
       (setq start (1+ (params-end *string* :start start)))
@@ -2486,7 +2486,7 @@
 			 (go L))))))))))
 
 (def-format-handler #\< (start end)
-  (if (colonp (1- end))
+  (if (colonp *string* (1- end))
       (handle-logical-block start end)
       (handle-standard-< start end)))
 
@@ -2503,7 +2503,7 @@
       (multiple-value-setq (c i j) (next-directive *string* :start j :end end))
       (when (null c) (return n))
       (cond ((eql c #\;)
-	     (if (colonp j)
+	     (if (colonp *string* j)
 		 (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." *string* j)))
 	    ((find c "*[^<_IiWw{Tt")
 	     (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
