@@ -1888,14 +1888,18 @@
 			  (values (mod #.array-total-size-limit) &optional))
 		params-end))
 (defun params-end (start) ;start points just after ~
-  (let ((j start) (end (length *string*)))
-    (loop
-      (setq j (position-not-in *string* "+-0123456789,Vv#:@" :start j))
-      (when (null j) (err 1 "missing directive" (1- start)))
-      (when (not (eq (aref *string* j) #\')) (return j))
-      (incf j)
-      (if (= j end) (err 2 "No character after '" (1- j)))
-      (incf j))))
+  (let ((end (length *string*)))
+    (labels ((rec (position)
+	       (cond
+	         ((null position)
+		  (err 1 "missing directive" (1- start)))
+	         ((not (eq (aref *string* position) #\'))
+		  position)
+	         ((= (1+ position) end)
+		  (err 2 "No character after '" position))
+	         (t
+		   (rec (position-not-in *string* "+-0123456789,Vv#:@" :start (+ 2 position)))))))
+      (rec (position-not-in *string* "+-0123456789,Vv#:@" :start start)))))
 
 
 (declaim (ftype (function ((mod #.array-total-size-limit)
