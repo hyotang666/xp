@@ -141,16 +141,13 @@
 (defun output-position  (&optional (s *standard-output*)) (excl::charpos s)) )
 
 
-#-clasp
 (declaim (type (or null integer) *locating-circularities*))
 (defvar *locating-circularities* nil
   "Integer if making a first pass over things to identify circularities.
    Integer used as counter for #n= syntax.")
-#-clasp
 (declaim (type list *parents*))
 (defvar *parents* nil "used when *print-shared* is nil")
 
-#-clasp
 (declaim (type (or null hash-table) *circularity-hash-table*))
 (defvar *circularity-hash-table* nil
   "Contains hash table used for locating circularities, or a stack.")
@@ -158,12 +155,10 @@
 ;If a duplicate is found, a positive integer tag is assigned.
 ;After the first time the object is printed out, the tag is negated.
 
-#-clasp
 (declaim (type list *free-circularity-hash-tables*))
 (defvar *free-circularity-hash-tables* nil
   "free list of circularity hash tables") ; never bound
 
-#-clasp
 (declaim (ftype (function () (values hash-table &optional)) get-circularity-hash-table))
 (defun get-circularity-hash-table ()
   (or (pop *free-circularity-hash-tables*)
@@ -171,7 +166,6 @@
 
 ;If you call this, then the table gets efficiently recycled.
 
-#-clasp
 (declaim (ftype (function (hash-table) (values &optional)) free-circularity-hash-table))
 (defun free-circularity-hash-table (table)
   (clrhash table)
@@ -194,7 +188,6 @@
   (fn nil)          ;pprint function
   (full-spec nil))  ;list of priority and type specifier
 
-#-clasp
 (declaim (ftype (function (&optional (or null pprint-dispatch)) (values pprint-dispatch &optional))
 		copy-pprint-dispatch))
 (defun copy-pprint-dispatch (&optional (table *print-pprint-dispatch*))
@@ -216,7 +209,6 @@
       :structures new-structures
       :others (copy-list (others table)))))
 
-#-clasp
 (declaim (ftype (function ((or symbol cons) (or symbol function)
 			     &optional real (or null pprint-dispatch))
 			  (values null &optional))
@@ -228,7 +220,6 @@
     (error "invalid PRIORITY argument ~A to SET-PPRINT-DISPATCH" priority))
   (set-pprint-dispatch+ type-specifier function priority table))
 
-#-clasp
 (declaim (ftype (function ((or symbol cons))
 			  (values (member :cons-with-car :structure-type :other) &optional))
 		specifier-category))
@@ -257,7 +248,6 @@
     (array arrayp) (package packagep) (function functionp)
     (compiled-function compiled-function-p))))
 
-#-clasp
 (declaim (ftype (function ((or symbol cons)) (values (cons (eql lambda)) &optional))
 		specifier-fn))
 (defun specifier-fn (spec)
@@ -280,7 +270,6 @@
                    (T `(typep x ',(copy-tree spec))))))
     `(lambda (x) ,(convert-body spec))))
 
-#-clasp
 (declaim (ftype (function ((or symbol cons)
 			   (or symbol function)
 			   real
@@ -332,13 +321,13 @@
 	   (adjust-counts table priority 1)))))
   nil)
 
-#-clasp
+
 (declaim (ftype (function (real real) (values boolean &optional)) priority->))
 (defun priority-> (x y)
   (> x y))
 
 
-#-clasp
+
 (declaim (ftype (function (pprint-dispatch real integer) (values null &optional)) adjust-counts))
 (defun adjust-counts (table priority delta)
   (maphash #'(lambda (key value)
@@ -352,7 +341,7 @@
 		   (incf (test value) delta)))
 	   (structures table)))
 
-#-clasp
+
 (declaim (ftype (function (t pprint-dispatch) (values (or null (or symbol function)) &optional))
 		get-printer))
 (defun get-printer (object table)
@@ -367,7 +356,7 @@
 	        :do (setq entry o) (loop-finish)))
     (when entry (fn entry))))
 
-#-clasp
+
 (declaim (ftype (function (t &optional (or null pprint-dispatch))
 			  (values (or symbol function) boolean &optional))
 		pprint-dispatch))
@@ -376,11 +365,11 @@
 	 (fn (get-printer object table)))
     (values (or fn #'non-pretty-print) (not (null fn)))))
 
-#-clasp
+
 (declaim (ftype (function (t entry) (values boolean &optional)) fits))
 (defun fits (obj entry) (and (funcall (test entry) obj) t))
 
-#-clasp
+
 (declaim (ftype (function (t) (values (eql t) &optional))
 		always-true))
 (defun always-true (x) (declare (ignore x)) T)
@@ -584,7 +573,7 @@
 
 (defmacro section-start (xp) `(aref (block-stack ,xp) (block-stack-ptr ,xp)))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values &optional))
 		push-block-stack))
 (defun push-block-stack (xp)
@@ -592,7 +581,7 @@
   (check-size xp block-stack (block-stack-ptr xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values &optional))
 		pop-block-stack))
 (defun pop-block-stack (xp)
@@ -610,7 +599,7 @@
 (defmacro section-start-line (xp)
   `(aref (prefix-stack ,xp) (+ (prefix-stack-ptr ,xp) 4)))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure)
 			  (values &optional))
 		push-prefix-stack
@@ -647,7 +636,7 @@
 ;does not ever cause a shift, and even in long printout, the queue is
 ;shifted left for free every time it happens to empty out.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure Qtype (or null Qkind) &optional (or null t))
 			  (values &optional))
 		enqueue))
@@ -669,7 +658,7 @@
 
 (defmacro Qnext (index) `(+ ,index #.queue-entry-size))
 
-#-clasp
+
 (declaim (type boolean *describe-xp-streams-fully*))
 (defvar *describe-xp-streams-fully* nil "Set to T to see more info.")
 
@@ -737,11 +726,11 @@
 ;primitives for it.  There is a tiny probability here that two different
 ;processes could end up trying to use the same xp-stream)
 
-#-clasp
+
 (declaim (type list *free-xps*))
 (defvar *free-xps* nil "free list of XP stream objects") ; never bound
 
-#-clasp
+
 (declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
 (defun get-pretty-print-stream (stream)
   (initialize-xp (or (pop *free-xps*)
@@ -750,7 +739,7 @@
 
 ;If you call this, the xp-stream gets efficiently recycled.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values list &optional))
 		free-pretty-print-stream))
 (defun free-pretty-print-stream (xp)
@@ -765,7 +754,7 @@
 
 ;This is called to initialize things when you start pretty printing.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure stream)
 			  (values xp-structure &optional))
 		initialize-xp))
@@ -801,7 +790,7 @@
 ;each mode specifies what should happen to every letter.  Therefore, inner
 ;nested modes never have any effect.  You can just ignore them.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure char-mode) (values &optional))
 		push-char-mode))
 (defun push-char-mode (xp new-mode)
@@ -810,7 +799,7 @@
   (incf (char-mode-counter xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values &optional)) pop-char-mode))
 (defun pop-char-mode (xp)
   (decf (char-mode-counter xp))
@@ -819,7 +808,7 @@
   (values))
 
 ;Assumes is only called when char-mode is non-nil
-#-clasp
+
 (declaim (ftype (function (xp-structure character)
 			  (values character &optional))
 		handle-char-mode))
@@ -846,7 +835,7 @@
 ;output is guaranteed not to contain a newline char.
 
 
-#-clasp
+
 (declaim (ftype (function (xp-structure Qindex) (values &optional)) set-indentation-prefix))
 (defun set-indentation-prefix (xp new-position)
   (let ((new-ind (max (non-blank-prefix-ptr xp) new-position)))
@@ -865,7 +854,7 @@
 ;;; prefix-stack, and queue will be in an inconsistent state after the call.
 ;;; You better not call it this way except as the last act of outputting.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure boolean boolean)
 			  (values &optional))
 		attempt-to-output))
@@ -924,7 +913,7 @@
   (when flush-out? (flush xp))
   (values)))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
 (defun force-some-output (xp)
   (attempt-to-output xp nil nil)
@@ -932,7 +921,7 @@
     (attempt-to-output xp T T))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
 ;note this checks (> BUFFER-PTR LINEL) instead of (> (LP<-BP) LINEL)
 ;this is important so that when things are longer than a line they
@@ -947,7 +936,7 @@
     (setf (buffer-ptr xp) new-buffer-end))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (character xp-structure) (values &optional))
 		write-char+))
 (defun write-char+ (char xp)
@@ -955,7 +944,7 @@
       (write-char++ char xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (string xp-structure
 				  (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit))
@@ -975,7 +964,7 @@
     (setf (buffer-ptr xp) new-buffer-end))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (string xp-structure
 				  (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit))
@@ -986,7 +975,7 @@
     (force-some-output xp))
   (write-string+++ string xp start end))
 
-#-clasp
+
 (declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit))
 			  (values null &optional))
@@ -1003,7 +992,7 @@
 (deftype tab-kind ()
   '(member :section :line-relative :section-relative :line))
 
-#-clasp
+
 (declaim (ftype (function (tab-kind
 			   (integer 0 *)
 			   (integer 0 *)
@@ -1040,7 +1029,7 @@
 ;note following is smallest number >= x that is a multiple of colinc
 ;  (* colinc (floor (+ x (1- colinc)) colinc))
 
-#-clasp
+
 (declaim (ftype (function ((or newline-kind (member :fresh :unconditional))
 			   xp-structure)
 			  (values &optional))
@@ -1060,7 +1049,7 @@
     (attempt-to-output xp T nil))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure (or null string)
 					boolean
 					(or null string))
@@ -1080,7 +1069,7 @@
   (setf (section-start xp) (TP<-BP xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure (or null string)) (values &optional)) end-block))
 (defun end-block (xp suffix)
   (unless (eq *abbreviation-happened* '*print-lines*)
@@ -1097,7 +1086,7 @@
     (pop-block-stack xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (indent-kind fixnum xp-structure) (values &optional))
 		pprint-indent+))
 (defun pprint-indent+ (kind n xp)
@@ -1105,7 +1094,7 @@
 
 ;this can only be called last!
 
-#-clasp
+
 (declaim (ftype (function (xp-structure) (values &optional)) flush))
 (defun flush (xp)
   (unless *locating-circularities*
@@ -1118,7 +1107,7 @@
 
 ;This prints out a line of stuff.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure Qindex)
 			  (values &optional)) output-line))
 (defun output-line (xp Qentry)
@@ -1143,7 +1132,7 @@
           (buffer xp) (base-stream xp) :end end)))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure Qindex) (values &optional)) setup-for-next-line))
 (defun setup-for-next-line (xp Qentry)
   (let* ((out-point (BP<-TP xp (Qpos xp Qentry)))
@@ -1164,7 +1153,7 @@
       (setf (section-start-line xp) (line-no xp))))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure string) (values &optional)) set-prefix))
 (defun set-prefix (xp prefix-string)
   (replace (prefix xp) prefix-string
@@ -1172,7 +1161,7 @@
   (setf (non-blank-prefix-ptr xp) (prefix-ptr xp))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure string) (values &optional)) set-suffix))
 (defun set-suffix (xp suffix-string)
   (let* ((end (length suffix-string))
@@ -1184,7 +1173,7 @@
     (setf (suffix-ptr xp) new-end))
   (values))
 
-#-clasp
+
 (declaim (ftype (function (string (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit))
 			  (values string &optional))
@@ -1223,7 +1212,7 @@
 ;;; any case, it is not clear that it easy to tell exactly what kinds of numbers a
 ;;; given implementation of CL is going to have the reader automatically share.
 
-#-clasp
+
 (declaim (ftype (function (xp-structure t boolean)
 			  (values (member nil :subsequent :first) &optional))
 		circularity-process))
@@ -1271,7 +1260,7 @@
 (deftype stream-designator ()
   '(or boolean stream))
 
-#-clasp
+
 (declaim (ftype (function (stream-designator) (values stream &optional)) decode-stream-arg))
 (defun decode-stream-arg (stream)
   "Decode stream-designator to apropreate stream."
@@ -1305,7 +1294,7 @@
 			   (non-pretty-print object s))))
 		   (write-string+ stuff xp 0 (length stuff)))))))))
 
-#-clasp
+
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
   (with-xp (xp stream)
@@ -1333,7 +1322,7 @@
     (setq *parents* nil)
     (setq *result* (do-xp-printing fn stream args))))
 
-#-clasp
+
 (declaim (ftype (function (function stream &rest t) (values t &optional)) call-with-xp-stream))
 (defun call-with-xp-stream (fn stream &rest args)
   (if (xp-structure-p stream) (apply fn stream args)
@@ -1355,7 +1344,7 @@
 			     fn stream list))))))
 	*result*)))
 
-#-clasp
+
 (declaim (ftype (function (t stream) (values t &optional)) basic-write))
 (defun basic-write (object stream)
   (cond ((xp-structure-p stream) (write+ object stream))
@@ -1440,7 +1429,7 @@
 		  (write-string++ s xp 0 (length s))
 		  (if mode (pop-char-mode xp)) T))))))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure fixnum) (values &optional)) print-fixnum))
 (defun print-fixnum (xp fixnum)
   (multiple-value-bind (digits d)
@@ -1452,7 +1441,7 @@
 ;just wants to succeed fast in a lot of common cases.
 ;assumes no funny readtable junk for the characters shown.
 
-#-clasp
+
 (declaim (ftype (function (string) (values boolean &optional)) no-escapes-needed))
 (defun no-escapes-needed (s)
   (let ((n (length s)))
@@ -1532,7 +1521,7 @@
 
 (defvar *format-string-cache* T)
 
-#-clasp
+
 (declaim (ftype (function ((or string function) boolean)
 			  (values (or string function) &optional))
 		process-format-string))
@@ -1756,7 +1745,7 @@
 ;Initial is always bound to (args) if it is bound at all.
 ;Note this uses args, but only when actually binding
 
-#-clasp
+
 (declaim (ftype (function () (values (eql init) &optional)) initial))
 (defun initial () (setq *used-initial* T) 'init)
 
@@ -1768,7 +1757,7 @@
 ; ARGS holds the current argument list
 ;The val bound to args must always be computed (to use it up) even if args is not used.
 
-#-clasp
+
 (declaim (ftype (function () (values (eql args) &optional)) args))
 (defun args () (setq *used-args* T) 'args)
 
@@ -1785,7 +1774,7 @@
 		    (body (code)))
 	       (if *used-args* (make-binding 'args val body) (cons val body)))))))
 
-#-clasp
+
 (declaim (ftype (function () (values (eql outer-args) &optional)) outer-args))
 (defun outer-args () (setq *used-outer-args* T) 'outer-args)
 
@@ -1806,7 +1795,7 @@
        (return-from logical-block nil)
        (pop ,args)))
 
-#-clasp
+
 (declaim (ftype (function (t xp-structure) (values boolean &optional)) pprint-pop-check+))
 (defun pprint-pop-check+ (args xp)
   (incf *current-length*)
@@ -1831,7 +1820,7 @@
        (return-from logical-block nil)
        (pop ,args)))
 
-#-clasp
+
 (declaim (ftype (function (t xp-structure) (values boolean &optional)) pprint-pop-check+top))
 (defun pprint-pop-check+top (args xp)
   (incf *current-length*)
@@ -1845,7 +1834,7 @@
 	 (setq *abbreviation-happened* T)
 	 T)))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit) (mod #.array-total-size-limit))
 			  (values t &optional))
 		literal))
@@ -1870,7 +1859,7 @@
 
 (defvar *default-package*)
 
-#-clasp
+
 (declaim (ftype (function (stream character t) (values cons &optional)) format-string-reader))
 (defun format-string-reader (stream sub-char arg)
     (declare (ignore arg))
@@ -1894,7 +1883,7 @@
 (defun position-not-in (set start)
   (position-if-not #'(lambda (c) (find c set)) *string* :start start))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit))
 			  (values (mod #.array-total-size-limit) &optional))
 		params-end))
@@ -1908,7 +1897,7 @@
       (if (= j end) (err 2 "No character after '" (1- j)))
       (incf j))))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values (or null (mod #.array-total-size-limit))
@@ -1925,7 +1914,7 @@
 	  (err 3 "Matching / missing" (position #\/ *string* :start start)))))
     (values i j)))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values (or null character)
@@ -1958,7 +1947,7 @@
 ;atsign? and a list of code chunks that correspond to the parameters
 ;specified.
 
-#-clasp
+
 (declaim (ftype (function () (values t &optional)) get-arg))
 (defun get-arg ()
   (if *get-arg-carefully*
@@ -1967,7 +1956,7 @@
 
 (defun num-args () `(length ,(args)))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   list
 			   &key (:max (or null (integer 0 *)))
@@ -2016,7 +2005,7 @@
 	(err 11 "Colon and atsign together not permitted" i))
     (values colon atsign params)))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values list &optional))
@@ -2049,7 +2038,6 @@
       (setq start j)
       (go L))))
 
-#-clasp
 (declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
 (defun formatter-fn (*string* *default-package*)
   (or (catch :format-compilation-error
@@ -2072,7 +2060,7 @@
 ;The business with the catch above allows many (formatter "...") errors to be
 ;reported in a file without stopping the compilation of the file.
 
-#-clasp
+
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
 (defun maybe-compile-format-string (string force-fn?)
@@ -2084,7 +2072,7 @@
 (defvar *testing-errors* nil "Used only when testing XP")
 
 ;; MEMO: Should be change to CONDITION system?
-#-clasp
+
 (declaim (ftype (function ((integer 0 *) string (integer 0 *))
 			  #-ccl
 			  (values nil &optional))
@@ -2097,7 +2085,7 @@
 
 ;Only called after correct parse is known.
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit))
 			  (values (mod #.array-total-size-limit) &optional))
 		params-start))
@@ -2110,7 +2098,7 @@
 
 ;breaks things up at ~; directives.
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values list &optional))
@@ -2124,7 +2112,7 @@
 	(when (eql c #\;) (push (1+ j) positions))
 	(setq spot j)))))
 
-#-clasp
+
 (declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
 (defun fancy-directives-p (*string*)
   (let (i (j 0) (end (length *string*)) c)
@@ -2135,7 +2123,7 @@
       (when (or (find c "_Ii/Ww") (and (find c ">Tt") (colonp j)))
 	(return T)))))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
 			  (values (or null (mod #.array-total-size-limit)) &optional))
 		num-args-in-args))
@@ -2154,7 +2142,7 @@
 
 ;Both these only called if correct parse already known.
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit))
 			  (values boolean &optional))
 		colonp
@@ -2306,7 +2294,7 @@
 (defun backup-in-list (num list some-tail)
   (backup-to (- (tail-pos list some-tail) num) list some-tail))
 
-#-clasp
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   list list)
 			  (values list &optional))
@@ -2327,7 +2315,7 @@
 ;relative to list.  However, we have to be careful, because they both could
 ;be cdr recursive.
 
-#-clasp
+
 (declaim (ftype (function (list list)
 			  (values (mod #.array-total-size-limit)
 				  (mod #.array-total-size-limit)
@@ -2532,7 +2520,7 @@
 			 (compile-format (car chunks)
 					 (directive-start (cadr chunks)))))))))))))
 
-#-clasp
+
 (declaim (ftype (function (xp-structure t boolean)
 			  (values boolean &optional))
 		check-block-abbreviation))
@@ -2544,7 +2532,7 @@
 	      (eq (circularity-process xp args nil) :subsequent)) T)
 	(T nil)))
 
-#-clasp
+
 (declaim (ftype (function (boolean list) (values list &optional)) fill-transform))
 (defun fill-transform (doit? body)
   (if (not doit?) body
@@ -2556,14 +2544,14 @@
 			(T (list form))))
 	      body)))
 
-#-clasp
+
 (declaim (ftype (function (character) (values cons &optional)) fill-transorm-char))
 (defun fill-transform-char (char)
   (if (or (char= char #\space) (char= char #\tab))
       (list `(write-char++ ,char xp) '(pprint-newline+ :fill xp))
       `((write-char++ ,char xp))))
 
-#-clasp
+
 (declaim (ftype (function (string) (values list &optional)) fill-transform-literal))
 (defun fill-transform-literal (string)
   (flet ((white-space (c) (or (char= c #\space) (char= c #\tab))))
