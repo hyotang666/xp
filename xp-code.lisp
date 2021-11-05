@@ -1910,14 +1910,15 @@
 				  &optional))
 		next-directive1))
 (defun next-directive1 (start end)
-  (let ((i (position #\~ *string* :start start :end end)) j)
-    (when i
-      (setq j (params-end *string* :start (1+ i)))
-      (when (char= (aref *string* j) #\/)
-	(setq j (position #\/ *string* :start (1+ j) :end end))
- 	(when (null j)
-	  (err 3 "Matching / missing" (position #\/ *string* :start start)))))
-    (values i j)))
+  (let ((i (position #\~ *string* :start start :end end)))
+    (if (null i)
+      (values nil nil)
+      (let ((j (params-end *string* :start (1+ i))))
+	(if (not (char= (aref *string* j) #\/))
+	  (values i j)
+	  (values i (or (position #\/ *string* :start (1+ j) :end end)
+			(err 3 "Matching / missing"
+			     (position #\/ *string* :start start)))))))))
 
 
 (declaim (ftype (function ((mod #.array-total-size-limit)
