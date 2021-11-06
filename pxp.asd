@@ -17,6 +17,10 @@
 	    :pathname "buffer"
 	    :depends-on ("adjustable-vector")
 	    :components ((:file "buffer")))
+   (:module "stack"
+	    :pathname "stack"
+	    :depends-on ("adjustable-vector")
+	    :components ((:file "stack")))
    (:file "xp-code" :depends-on ("buffer")))
   :in-order-to ((test-op (test-op "xp-test"))))
 
