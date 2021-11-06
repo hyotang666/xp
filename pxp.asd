@@ -10,8 +10,12 @@
    (:feature :ccl "fare-quasiquote-extras") ; Portable backquote.
    )
   :components
-  ((:module "buffer"
+  ((:module "adjustable-vector"
+	    :pathname "adjustable-vector"
+	    :components ((:file "adjustable-vector")))
+   (:module "buffer"
 	    :pathname "buffer"
+	    :depends-on ("adjustable-vector")
 	    :components ((:file "buffer")))
    (:file "xp-code" :depends-on ("buffer")))
   :in-order-to ((test-op (test-op "xp-test"))))

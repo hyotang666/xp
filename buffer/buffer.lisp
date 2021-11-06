@@ -1,5 +1,6 @@
 (cl:in-package :cl-user)
 (defpackage :pxp.buffer (:use :cl)
+  (:shadow write)
   (:export
     #:buffer ; class name.
     #:buffer-ptr
@@ -7,7 +8,7 @@
     ;; printer
     #:show
     #:show-detail
-    #:write-to
+    #:write
     ;;
     #:initialize
     #:skip-to
@@ -39,9 +40,11 @@
 #+:franz-inc
 (defun output-position  (&optional (s *standard-output*)) (excl::charpos s))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; PXP.ADJUSTABLE-VECTOR:OVERFLOW-PROTECT needs this eval-when.
 (defclass buffer ()
   ((buffer
-     :initform (make-array #.buffer-min-size :element-type 'character)
+     :initform (pxp.adjustable-vector:new #.buffer-min-size :element-type 'character)
      :initarg :buffer :accessor buffer
      :documentation
      #.(cl:format nil "~@{~A~^~%~}"
@@ -68,19 +71,19 @@
        	   "Buffer position (eg BUFFER-PTR)"
        	   "Line position (eg (+ BUFFER-PTR CHARPOS)).  Indentations are stored in this form."
        	   "Total position if all on one line (eg (+ BUFFER-PTR BUFFER-OFFSET))"
-       	   " Positions are stored in this form."))))
+       	   " Positions are stored in this form.")))))
+
+(defun write (buffer output &key (end (buffer-ptr buffer)))
+  (pxp.adjustable-vector:write (buffer buffer) output :end end))
 
 (defun show (buffer output)
   (fresh-line output)
   (write-string "buffer= " output)
-  (write-string (buffer buffer) output :start 0 :end (max (buffer-ptr buffer) 0)))
+  (write buffer output :end (max (buffer-ptr buffer) 0)))
 
 (defun show-detail (buffer output)
   (cl:format output "charpos= ~D buffer-ptr= ~D buffer-offset= ~D"
 	     (charpos buffer) (buffer-ptr buffer) (buffer-offset buffer)))
-
-(defun write-to (output buffer &key (end (buffer-ptr buffer)))
-  (write-string (buffer buffer) output :end end))
 
 ;;;; CHARPOS
 
@@ -112,48 +115,31 @@
 ;to actually extend and non-adjustable vectors are a lot faster in
 ;many Common Lisps.
 
-(defmacro may-resize (buffer vect ptr)
-  (let* ((min-size
-	   (symbol-value
-	     (uiop:find-symbol* (concatenate 'string (string vect) "-MIN-SIZE")
-				:pxp.buffer)))
-	 (entry-size
-	   (symbol-value
-	     (uiop:find-symbol* (concatenate 'string (string vect) "-ENTRY-SIZE")
-				:pxp.buffer))))
-    `(when (and (> ,ptr ,(- min-size entry-size)) ;seldom happens
-		(> ,ptr (- (length (,vect ,buffer)) ,entry-size)))
-       (let* ((old (,vect ,buffer))
-	      (new (make-array (+ ,ptr ,(if (= entry-size 1) 50
-					    (* 10 entry-size)))
-			       :element-type (array-element-type old))))
-	 (replace new old)
-	 (setf (,vect ,buffer) new)))))
-
 (defun add-char (char buffer)
   (let ((new-buffer-end (1+ (buffer-ptr buffer))))
-    (may-resize buffer buffer new-buffer-end)
-    (setf (char (buffer buffer) (buffer-ptr buffer)) char
-	  (buffer-ptr buffer) new-buffer-end)))
+    (pxp.adjustable-vector:overflow-protect (buffer buffer new-buffer-end)
+      (setf (pxp.adjustable-vector:ref (buffer buffer) (buffer-ptr buffer)) char
+	    (buffer-ptr buffer) new-buffer-end))))
 
 (defun add-string (string buffer &key start end mode)
   (let ((new-buffer-end (+ (buffer-ptr buffer) (- end start))))
-    (may-resize buffer buffer new-buffer-end)
-    (loop :with buf = (buffer buffer)
-	  :for i :upfrom (buffer-ptr buffer)
-	  :for j :upfrom start :below end
-	  :do (setf (char buf i) (funcall mode (char string j))))
-    (setf (buffer-ptr buffer) new-buffer-end)))
+    (pxp.adjustable-vector:overflow-protect (buffer buffer new-buffer-end)
+      (loop :with buf = (buffer buffer)
+            :for i :upfrom (buffer-ptr buffer)
+            :for j :upfrom start :below end
+            :do (setf (pxp.adjustable-vector:ref buf i) (funcall mode (char string j))))
+      (setf (buffer-ptr buffer) new-buffer-end))))
 
 (defun skip-to (length buffer)
   (let ((end (+ (buffer-ptr buffer) length)))
-    (may-resize buffer buffer end)
-    (fill (buffer buffer) #\space :start (buffer-ptr buffer) :end end)
-    (setf (buffer-ptr buffer) end)))
+    (pxp.adjustable-vector:overflow-protect (buffer buffer end)
+      (pxp.adjustable-vector:fill (buffer buffer) #\space :start (buffer-ptr buffer) :end end)
+      (setf (buffer-ptr buffer) end))))
 
 (defun prefix (buffer &key rewind)
-  (subseq (buffer buffer) (- (buffer-ptr buffer) rewind)
-	  (buffer-ptr buffer)))
+  (pxp.adjustable-vector:subseq (buffer buffer)
+				(- (buffer-ptr buffer) rewind)
+				(buffer-ptr buffer)))
 
 ;;;; BUFFER-OFFSET
 
@@ -166,14 +152,20 @@
   (setf (buffer-ptr buffer) 0))
 
 (defun last-non-blank (buffer &key end)
-  (position #\space (buffer buffer) :test-not #'char= :from-end T :end end))
+  (pxp.adjustable-vector:position #\space (buffer buffer) :test-not #'char= :from-end T :end end))
 
 (defun shift (buffer change &key prefix prefix-end out-point)
-  (setf (charpos buffer) 0)
-  (when (plusp change)                  ;almost never happens
-    (may-resize buffer buffer (+ (buffer-ptr buffer) change)))
-  (replace (buffer buffer) (buffer buffer) :start1 prefix-end
-	   :start2 out-point :end2 (buffer-ptr buffer))
-  (replace (buffer buffer) prefix :end2 prefix-end)
-  (incf (buffer-ptr buffer) change)
-  (decf (buffer-offset buffer) change))
+  (flet ((set-prefix! (adjustable-vector prefix end2)
+           (pxp.adjustable-vector:replace adjustable-vector prefix :end2 end2))
+	 (shift! (adjustable-vector start1 start2 end2)
+           (pxp.adjustable-vector:replace adjustable-vector adjustable-vector
+					  :start1 start1
+					  :start2 start2
+					  :end2 end2)))
+    (setf (charpos buffer) 0)
+    (when (plusp change) ; almost never happens
+      (pxp.adjustable-vector:overflow-protect (buffer buffer (+ (buffer-ptr buffer) change))))
+    (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
+    (set-prefix! (buffer buffer) prefix prefix-end)
+    (incf (buffer-ptr buffer) change)
+    (decf (buffer-offset buffer) change)))

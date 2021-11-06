@@ -1043,7 +1043,7 @@
 (declaim (ftype (function (xp-structure) (values &optional)) flush))
 (defun flush (xp)
   (unless *locating-circularities*
-    (pxp.buffer:write-to (base-stream xp) xp))
+    (pxp.buffer:write xp (base-stream xp)))
   (pxp.buffer:flush xp)
   (values))
 
@@ -1069,7 +1069,7 @@
       (throw 'line-limit-abbreviation-exit T))
     (incf (line-no xp))
     (unless *locating-circularities*
-      (pxp.buffer:write-to (base-stream xp) xp :end end)
+      (pxp.buffer:write xp (base-stream xp) :end end)
       (cl:terpri (base-stream xp))))
   (values))
 
