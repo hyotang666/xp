@@ -374,58 +374,11 @@
 
 ;               ---- XP STRUCTURES, AND THE INTERNAL ALGORITHM ----
 
-(eval-when (:execute :load-toplevel :compile-toplevel) ;not used at run time.
-  (defvar block-stack-entry-size 1)
-  (defvar prefix-stack-entry-size 5)
-  (defvar queue-entry-size 7)
-  (defvar prefix-entry-size 1)
-  (defvar suffix-entry-size 1))
-
-(eval-when (:execute :load-toplevel :compile-toplevel) ;used at run time
-  (defvar block-stack-min-size #.(* 35. block-stack-entry-size))
-  (defvar prefix-stack-min-size #.(* 30. prefix-stack-entry-size))
-  (defvar queue-min-size #.(* 75. queue-entry-size))
-  (defvar prefix-min-size 256.)
-  (defvar suffix-min-size 256.))
-
 (deftype char-mode ()
   '(member nil :up :down :cap0 :cap1 :capw))
 
-(deftype newline-kind ()
-  '(member :mandatory :miser :fill :linear))
-(deftype indent-kind ()
-  '(member :current :block))
-
-;;;; Quque entries.
-(deftype Qtype () '(member :newline :ind :start-block :end-block))
-(deftype Qkind ()
-  '(or newline-kind (member :unconditional :fresh) indent-kind))
-(deftype Qpos ()
-  "Total position corresponding to this entry"
-  '(integer 0 #.queue-min-size))
-(deftype Qdepth ()
-  "Depth in blocks of this entry."
-  '(integer 0 *))
-(deftype Qend ()
-  "Offset to entry marking end of section this entry starts. (NIL until known.)
-  Only :start-block and non-literal :newline entries can start sections."
-  '(or null (integer 0 *)))
-(deftype Qoffset ()
-  "Offset to :END-BLOCK for :START-BLOCK (NIL until known)."
-  '(or null (integer 0 *)))
-(deftype Qarg ()
-  "QARG for :IND indentation delta
-       for :START-BLOCK suffix in the block if any.
-                        or if per-line-prefix then cons of suffix and
-                        per-line-prefix.
-       for :END-BLOCK suffix for the block if any."
-  '(or string cons))
-(deftype Qentry ()
-  "The queue entries have several parts."
-  '(or Qtype Qkind Qpos Qdepth Qend Qoffset Qarg))
-
 (defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream
-			 pxp.buffer:buffer pxp.stack:stack)
+			 pxp.buffer:buffer pxp.stack:stack pxp.queue:queue)
   ((base-stream :initform nil :initarg :base-stream
        	 :type (or null stream) :accessor base-stream
        	 :documentation "The stream io eventually goes to.")
@@ -439,18 +392,7 @@
               :accessor char-mode)
    (char-mode-counter :initform nil :initarg :char-mode-counter
        	       :accessor char-mode-counter
-       	       :documentation "depth of nesting of ~(...~)")
-   (queue :initform (make-array #.queue-min-size :element-type 'Qentry)
-          :initarg :queue :accessor queue
-          :documentation
-          "This holds a queue of action descriptors.")
-   (qleft :initform nil :initarg :qleft :accessor qleft
-          :documentation "Point to the next entry to dequeue.")
-   (qright :initform nil :initarg :qright :accessor qright
-           :documentation "Point to the last entry enqueued.")))
-
-(defun Qemptyp (xp)
-  (> (Qleft xp) (Qright xp)))
+       	       :documentation "depth of nesting of ~(...~)")))
 
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
@@ -465,60 +407,10 @@
 ;to actually extend and non-adjustable vectors are a lot faster in
 ;many Common Lisps.
 
-(defmacro check-size (xp vect ptr)
-  (let* ((min-size
-	   (symbol-value
-	     (intern (concatenate 'string (string vect) "-MIN-SIZE")
-		     (find-package :pxp))))
-	 (entry-size
-	   (symbol-value
-	     (intern (concatenate 'string (string vect) "-ENTRY-SIZE")
-		     (find-package :pxp)))))
-    `(when (and (> ,ptr ,(- min-size entry-size)) ;seldom happens
-		(> ,ptr (- (length (,vect ,xp)) ,entry-size)))
-       (let* ((old (,vect ,xp))
-	      (new (make-array (+ ,ptr ,(if (= entry-size 1) 50
-					    (* 10 entry-size)))
-			       :element-type (array-element-type old))))
-	 (replace new old)
-	 (setf (,vect ,xp) new)))))
-
-(deftype Qindex () '(mod #.array-total-size-limit))
-
-(defmacro Qtype   (xp index) `(aref (queue ,xp) ,index))
-(defmacro Qkind   (xp index) `(aref (queue ,xp) (1+ ,index)))
-(defmacro Qpos    (xp index) `(aref (queue ,xp) (+ ,index 2)))
-(defmacro Qdepth  (xp index) `(aref (queue ,xp) (+ ,index 3)))
-(defmacro Qend    (xp index) `(aref (queue ,xp) (+ ,index 4)))
-(defmacro Qoffset (xp index) `(aref (queue ,xp) (+ ,index 5)))
-(defmacro Qarg    (xp index) `(aref (queue ,xp) (+ ,index 6)))
-
 ;we shift the queue over rather than using a circular queue because
 ;that works out to be a lot faster in practice.  Note, short printout
 ;does not ever cause a shift, and even in long printout, the queue is
 ;shifted left for free every time it happens to empty out.
-
-
-(declaim (ftype (function (xp-structure Qtype (or null Qkind) &optional (or null t))
-			  (values &optional))
-		enqueue))
-(defun enqueue (xp type kind &optional arg)
-  (incf (Qright xp) #.queue-entry-size)
-  (when (> (Qright xp) #.(- queue-min-size queue-entry-size))
-    (replace (queue xp) (queue xp) :start2 (Qleft xp) :end2 (Qright xp))
-    (setf (Qright xp) (- (Qright xp) (Qleft xp)))
-    (setf (Qleft xp) 0))
-  (check-size xp queue (Qright xp))
-  (setf (Qtype xp (Qright xp)) type)
-  (setf (Qkind xp (Qright xp)) kind)
-  (setf (Qpos xp (Qright xp)) (pxp.buffer:TP<-BP xp))
-  (setf (Qdepth xp (Qright xp)) (pxp.stack:depth-in-blocks xp))
-  (setf (Qend xp (Qright xp)) nil)
-  (setf (Qoffset xp (Qright xp)) nil)
-  (setf (Qarg xp (Qright xp)) arg)
-  (values))
-
-(defmacro Qnext (index) `(+ ,index #.queue-entry-size))
 
 
 (declaim (type boolean *describe-xp-streams-fully*))
@@ -544,23 +436,7 @@
         (cl:format s "~&linel= ~D" (linel xp))
 	(pxp.buffer:show-detail xp s)
 	(pxp.stack:show-detail xp s)
-        (unless (Qemptyp xp)
-          (cl:format s "~&ptr type         kind           pos depth end offset arg")
-          (do ((p (Qleft xp) (Qnext p))) ((> p (Qright xp)))
-            (cl:format s "~&~4A~13A~15A~4A~6A~4A~7A~A"
-              (/ (- p (Qleft xp)) #.queue-entry-size)
-              (Qtype xp p)
-              (if (member (Qtype xp p) '(:newline :ind)) (Qkind xp p) "")
-              (pxp.buffer:BP<-TP xp (Qpos xp p))
-              (Qdepth xp p)
-              (if (not (member (Qtype xp p) '(:newline :start-block))) ""
-                  (and (Qend xp p)
-                       (/ (- (+ p (Qend xp p)) (Qleft xp)) #.queue-entry-size)))
-              (if (not (eq (Qtype xp p) :start-block)) ""
-                  (and (Qoffset xp p)
-                       (/ (- (+ p (Qoffset xp p)) (Qleft xp)) #.queue-entry-size)))
-              (if (not (member (Qtype xp p) '(:ind :start-block :end-block))) ""
-                  (Qarg xp p)))))
+	(pxp.queue:show xp s)
 	(pxp.stack:show-ptr xp s))))
   (values))
 
@@ -613,8 +489,7 @@
   (setf (line-no xp) 1)
   (setf (char-mode xp) nil)
   (setf (char-mode-counter xp) 0)
-  (setf (Qleft xp) 0)
-  (setf (Qright xp) #.(- queue-entry-size))
+  (pxp.queue:initialize xp)
   (pxp.stack:initialize xp)
   (pxp.buffer:initialize xp stream)
   xp)
@@ -695,53 +570,48 @@
 		   (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
 		   (when (not (minusp (pxp.stack:prefix-stack-ptr ,xp)))
 		     (decf limit (pxp.stack:suffix-ptr ,xp))))
-		 (cond ((Qend ,xp ,Qentry)
-			(> (LP<-TP ,xp (Qpos ,xp (+ ,Qentry (Qend ,xp ,Qentry)))) limit))
+		 (cond (Qend
+			(> (LP<-TP ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend))) limit))
 		       ((or force-newlines? (pxp.buffer:too-large-p xp :max limit)) T)
 		       (T (return nil))))) ; wait until later to decide.
 	     (misering? (xp)
                `(and *print-miser-width*
 		     (<= (- (linel ,xp) (pxp.stack:initial-prefix-ptr ,xp)) *print-miser-width*))))
-  (do () ((Qemptyp xp)
-	  (setf (Qleft xp) 0)
-	  (setf (Qright xp) #.(- queue-entry-size))) ;saves shifting
-    (case (Qtype xp (Qleft xp))
-      (:ind
-       (unless (misering? xp)
-	 (pxp.stack:set-indentation-prefix xp
-	   (case (Qkind xp (Qleft xp))
-	     (:block (+ (pxp.stack:initial-prefix-ptr xp) (Qarg xp (Qleft xp))))
-	     (T ; :current
-	       (+ (LP<-TP xp (Qpos xp (Qleft xp)))
-		  (Qarg xp (Qleft xp)))))))
-       (setf (Qleft xp) (Qnext (Qleft xp))))
-      (:start-block
-       (cond ((maybe-too-large xp (Qleft xp))
-	      (pxp.stack:push-prefix-stack xp)
-	      (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
-	      (pxp.stack:set-indentation-prefix xp (LP<-TP xp (Qpos xp (Qleft xp))))
-	      (let ((arg (Qarg xp (Qleft xp))))
-		(when (consp arg) (pxp.stack:set-prefix xp (cdr arg)))
-		(setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
-		(cond ((not (listp arg)) (pxp.stack:set-suffix xp arg))
-		      ((car arg) (pxp.stack:set-suffix xp (car arg)))))
-	      (setf (pxp.stack:section-start-line xp) (line-no xp)))
-	     (T (incf (Qleft xp) (Qoffset xp (Qleft xp)))))
-       (setf (Qleft xp) (Qnext (Qleft xp))))
-      (:end-block (pxp.stack:pop-prefix-stack xp) (setf (Qleft xp) (Qnext (Qleft xp))))
-      (T ; :newline
-       (when (case (Qkind xp (Qleft xp))
-	       (:fresh (not (pxp.buffer:left-most-p xp)))
-	       (:miser (misering? xp))
-	       (:fill (or (misering? xp)
-			  (> (line-no xp) (pxp.stack:section-start-line xp))
-			  (maybe-too-large xp (Qleft xp))))
-	       (T T)) ;(:linear :unconditional :mandatory)
-	 (output-line xp (Qleft xp))
-	 (setup-for-next-line xp (Qleft xp)))
-       (setf (Qleft xp) (Qnext (Qleft xp))))))
-  (when flush-out? (flush xp))
-  (values)))
+    (pxp.queue:for-each ((ptr Qtype Qkind Qarg Qpos Qoffset Qend) xp :consume t)
+      (case Qtype
+	(:ind
+	  (unless (misering? xp)
+	    (pxp.stack:set-indentation-prefix xp
+	      (case Qkind
+		(:block (+ (pxp.stack:initial-prefix-ptr xp) Qarg))
+		(T ; :current
+		  (+ (LP<-TP xp Qpos)
+		     Qarg))))))
+	(:start-block
+	  (cond ((maybe-too-large xp ptr)
+		 (pxp.stack:push-prefix-stack xp)
+		 (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
+		 (pxp.stack:set-indentation-prefix xp (LP<-TP xp Qpos))
+		 (let ((arg Qarg))
+		   (when (consp arg) (pxp.stack:set-prefix xp (cdr arg)))
+		   (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
+		   (cond ((not (listp arg)) (pxp.stack:set-suffix xp arg))
+			 ((car arg) (pxp.stack:set-suffix xp (car arg)))))
+		 (setf (pxp.stack:section-start-line xp) (line-no xp)))
+		(T (incf (pxp.queue:Qleft xp) Qoffset))))
+	(:end-block (pxp.stack:pop-prefix-stack xp) )
+	(T ; :newline
+	  (when (case Qkind
+		  (:fresh (not (pxp.buffer:left-most-p xp)))
+		  (:miser (misering? xp))
+		  (:fill (or (misering? xp)
+			     (> (line-no xp) (pxp.stack:section-start-line xp))
+			     (maybe-too-large xp ptr)))
+		  (T T)) ;(:linear :unconditional :mandatory)
+	    (output-line xp ptr)
+	    (setup-for-next-line xp ptr)))))
+    (when flush-out? (flush xp))
+    (values)))
 
 
 (declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
@@ -849,18 +719,15 @@
 ;  (* colinc (floor (+ x (1- colinc)) colinc))
 
 
-(declaim (ftype (function ((or newline-kind (member :fresh :unconditional))
+(declaim (ftype (function ((or pxp.queue:newline-kind (member :fresh :unconditional))
 			   xp-structure)
 			  (values &optional))
 		pprint-newline+))
 (defun pprint-newline+ (kind xp)
-  (enqueue xp :newline kind)
-  (do ((ptr (Qleft xp) (Qnext ptr)))    ;find sections we are ending
-      ((not (< ptr (Qright xp))))	;all but last
-    (when (and (null (Qend xp ptr))
-	       (not (> (pxp.stack:depth-in-blocks xp) (Qdepth xp ptr)))
-	       (member (Qtype xp ptr) '(:newline :start-block)))
-      (setf (Qend xp ptr) (- (Qright xp) ptr))))
+  (pxp.queue:enqueue xp :newline kind
+		     :position (pxp.buffer:TP<-BP xp)
+		     :depth (pxp.stack:depth-in-blocks xp)
+		     :sync :depth)
   (setf (pxp.stack:section-start xp) (pxp.buffer:TP<-BP xp))
   (when (and (member kind '(:fresh :unconditional)) (char-mode xp))
     (handle-char-mode xp #\newline))
@@ -881,8 +748,10 @@
       (setq prefix-string
 	    (pxp.buffer:prefix xp :rewind (length prefix-string))))
   (pxp.stack:push-block-stack xp)
-  (enqueue xp :start-block nil
-	   (if on-each-line? (cons suffix-string prefix-string) suffix-string))
+  (pxp.queue:enqueue xp :start-block nil
+		     :arg (if on-each-line? (cons suffix-string prefix-string) suffix-string)
+		     :position (pxp.buffer:TP<-BP xp)
+		     :depth (pxp.stack:depth-in-blocks xp))
   (incf (pxp.stack:depth-in-blocks xp))	      ;must be after enqueue
   (setf (pxp.stack:section-start xp) (pxp.buffer:TP<-BP xp))
   (values))
@@ -893,22 +762,22 @@
   (unless (eq *abbreviation-happened* '*print-lines*)
     (when suffix (write-string+ suffix xp 0 (length suffix)))
     (decf (pxp.stack:depth-in-blocks xp))
-    (enqueue xp :end-block nil suffix)
-    (do ((ptr (Qleft xp) (Qnext ptr))) ;looking for start of block we are ending
-	((not (< ptr (Qright xp))))    ;all but last
-      (when (and (= (pxp.stack:depth-in-blocks xp) (Qdepth xp ptr))
-		 (eq (Qtype xp ptr) :start-block)
-		 (null (Qoffset xp ptr)))
-	(setf (Qoffset xp ptr) (- (Qright xp) ptr))
-	(return nil)))	;can only be 1
+    (pxp.queue:enqueue xp :end-block nil
+		       :arg suffix
+		       :position (pxp.buffer:TP<-BP xp)
+		       :depth (pxp.stack:depth-in-blocks xp)
+		       :sync :offset)
     (pxp.stack:pop-block-stack xp))
   (values))
 
 
-(declaim (ftype (function (indent-kind fixnum xp-structure) (values &optional))
+(declaim (ftype (function (pxp.queue:indent-kind fixnum xp-structure) (values &optional))
 		pprint-indent+))
 (defun pprint-indent+ (kind n xp)
-  (enqueue xp :ind kind n))
+  (pxp.queue:enqueue xp :ind kind
+		     :arg n
+		     :position (pxp.buffer:TP<-BP xp)
+		     :depth (pxp.stack:depth-in-blocks xp)))
 
 ;this can only be called last!
 
@@ -923,12 +792,12 @@
 ;This prints out a line of stuff.
 
 
-(declaim (ftype (function (xp-structure Qindex)
+(declaim (ftype (function (xp-structure pxp.queue:Qindex)
 			  (values &optional)) output-line))
 (defun output-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:BP<-TP xp (Qpos xp Qentry)))
+  (let* ((out-point (pxp.buffer:BP<-TP xp (pxp.queue:Qpos xp Qentry)))
 	 (last-non-blank (pxp.buffer:last-non-blank xp :end out-point))
-	 (end (cond ((member (Qkind xp Qentry) '(:fresh :unconditional)) out-point)
+	 (end (cond ((pxp.queue:fresh-newline-p xp Qentry) out-point)
 		    (last-non-blank (1+ last-non-blank))
 		    (T 0)))
 	 (line-limit-exit (and (line-limit xp) (not (> (line-limit xp) (line-no xp))))))
@@ -937,7 +806,7 @@
       (write-string+++ " .." xp 0 3)
       (pxp.stack:set-reverse-suffix xp)
       (write-string+++ (pxp.stack:suffix xp) xp 0 (pxp.stack:suffix-ptr xp))
-      (setf (Qleft xp) (Qnext (Qright xp)))
+      (pxp.queue:flush xp)
       (setq *abbreviation-happened* '*print-lines*)
       (throw 'line-limit-abbreviation-exit T))
     (incf (line-no xp))
@@ -947,11 +816,11 @@
   (values))
 
 
-(declaim (ftype (function (xp-structure Qindex) (values &optional)) setup-for-next-line))
+(declaim (ftype (function (xp-structure pxp.queue:Qindex) (values &optional)) setup-for-next-line))
 (defun setup-for-next-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:BP<-TP xp (Qpos xp Qentry)))
+  (let* ((out-point (pxp.buffer:BP<-TP xp (pxp.queue:Qpos xp Qentry)))
 	 (prefix-end
-	   (cond ((member (Qkind xp Qentry) '(:unconditional :fresh))
+	   (cond ((pxp.queue:fresh-newline-p xp Qentry)
 		  (pxp.stack:non-blank-prefix-ptr xp))
 		 (T (pxp.stack:prefix-ptr xp))))
 	 (change (- prefix-end out-point)))
@@ -959,7 +828,7 @@
 		      :prefix (pxp.stack:prefix xp)
 		      :prefix-end prefix-end
 		      :out-point out-point)
-    (when (not (member (Qkind xp Qentry) '(:unconditional :fresh)))
+    (when (not (pxp.queue:fresh-newline-p xp Qentry))
       (setf (pxp.stack:section-start-line xp) (line-no xp))))
   (values))
 
@@ -1438,14 +1307,14 @@
 
 (defun pprint-newline (kind &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
-  (check-type kind newline-kind)
+  (check-type kind pxp.queue:newline-kind)
   (when (xp-structure-p stream)
     (pprint-newline+ kind stream))
   nil)
 
 (defun pprint-indent (relative-to n &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
-  (check-type relative-to indent-kind)
+  (check-type relative-to pxp.queue:indent-kind)
   (when (xp-structure-p stream)
     (pprint-indent+ relative-to n stream))
   nil)

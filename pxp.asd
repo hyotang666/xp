@@ -17,6 +17,10 @@
 	    :pathname "buffer"
 	    :depends-on ("adjustable-vector")
 	    :components ((:file "buffer")))
+   (:module "queue"
+	    :pathname "queue"
+	    :depends-on ("adjustable-vector" "buffer")
+	    :components ((:file "queue")))
    (:module "stack"
 	    :pathname "stack"
 	    :depends-on ("adjustable-vector")

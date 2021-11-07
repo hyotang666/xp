@@ -6,6 +6,7 @@
     #:overflow-protect
     #:write
     #:ref
+    #:index ; type
     ;; Re-Export from common-lisp as abstraction barrier.
     #:fill
     #:replace
@@ -13,6 +14,10 @@
     #:position
     ))
 (in-package :pxp.adjustable-vector)
+
+;; Type
+
+(deftype index () '(mod #.array-total-size-limit))
 
 ;; CREATE
 
