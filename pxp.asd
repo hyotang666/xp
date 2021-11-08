@@ -13,6 +13,9 @@
   ((:module "adjustable-vector"
 	    :pathname "adjustable-vector"
 	    :components ((:file "adjustable-vector")))
+   (:module "dispatch"
+	    :pathname "dispatch"
+	    :components ((:file "dispatch")))
    (:module "buffer"
 	    :pathname "buffer"
 	    :depends-on ("adjustable-vector")
@@ -25,6 +28,6 @@
 	    :pathname "stack"
 	    :depends-on ("adjustable-vector")
 	    :components ((:file "stack")))
-   (:file "xp-code" :depends-on ("buffer")))
+   (:file "xp-code" :depends-on ("buffer" "dispatch")))
   :in-order-to ((test-op (test-op "xp-test"))))
 

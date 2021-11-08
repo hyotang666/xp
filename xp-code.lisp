@@ -52,24 +52,26 @@
 
 ;The companion file "XPDOC.TXT" contains brief documentation.
 
-(defpackage :pxp (:use :cl)
-  (:shadow write print prin1 princ pprint format write-to-string princ-to-string
-	   prin1-to-string write-line write-string fresh-line
-	   defstruct)
-  (:shadow formatter copy-pprint-dispatch pprint-dispatch
-	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
-	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
-	   pprint-newline pprint-indent pprint-tab
-	   *print-pprint-dispatch* *print-right-margin*
-	   *print-miser-width* *print-lines*)
-  (:export formatter copy-pprint-dispatch pprint-dispatch
-	   set-pprint-dispatch pprint-fill pprint-linear pprint-tabular
-	   pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
-	   pprint-newline pprint-indent pprint-tab
-	   *print-pprint-dispatch* *print-right-margin* #:*default-right-margin*
-	   *print-miser-width* *print-lines*
-	   #:*last-abbreviated-printing*
-	   *print-shared*))
+#.(macrolet ((reexport (from &rest syms)
+	       `'((:shadowing-import-from ,from ,@syms)
+		  (:export ,from ,@syms))))
+    `(defpackage :pxp (:use :cl)
+       (:shadow write print prin1 princ pprint format write-to-string princ-to-string
+		prin1-to-string write-line write-string fresh-line
+		defstruct)
+       ,@(reexport :pxp.dispatch copy-pprint-dispatch pprint-dispatch
+		   set-pprint-dispatch *print-pprint-dispatch*)
+       (:shadow formatter pprint-fill pprint-linear pprint-tabular
+		pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
+		pprint-newline pprint-indent pprint-tab
+		*print-right-margin* *print-miser-width* *print-lines*)
+       (:export formatter pprint-fill pprint-linear pprint-tabular
+		pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
+		pprint-newline pprint-indent pprint-tab
+		*print-right-margin* #:*default-right-margin*
+		*print-miser-width* *print-lines*
+		#:*last-abbreviated-printing*
+		*print-shared*)))
 
 (in-package :pxp)
 
@@ -100,8 +102,6 @@
 
 (defvar *print-shared* nil)
 
-(defvar *print-pprint-dispatch* t ;see initialization at end of file.
-  "controls pretty printing of output")
 (defvar *print-right-margin* nil
   "+#/nil the right margin for pretty printing")
 (defvar *print-miser-width* 40.
@@ -114,10 +114,6 @@
 	#'(lambda (&optional stream) (declare (ignore stream)) nil)
   "funcalling this redoes the last xp printing that was abbreviated.")
 
-(defvar *ipd* nil ;see initialization at end of file.
-  "initial print dispatch table.")
-(defvar *current-level* 0
-  "current depth in logical blocks.")
 (defvar *current-length* 0
   "current position in logical block.")
 (defvar *abbreviation-happened* nil
@@ -127,7 +123,6 @@
 ;default (bad) definitions for the non-portable functions
 
 #-(or :franz-inc)(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
 
 
@@ -135,7 +130,6 @@
 ;(5/31/87) currently running on suns at MIT.)
 
 #+:franz-inc(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun structure-type-p (x) (and (symbolp x) (get x 'structure-printer)))
 (defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
 
 
@@ -169,208 +163,6 @@
   (clrhash table)
   (pushnew table *free-circularity-hash-tables*)
   (values))
-
-;                       ---- DISPATCHING ----
-
-(cl:defstruct (pprint-dispatch (:conc-name nil) (:copier nil))
-  (conses-with-cars (make-hash-table :test #'eq) :type hash-table)
-  (structures (make-hash-table :test #'eq) :type hash-table)
-  (others nil :type list))
-
-;The list and the hash-tables contain entries of the
-;following form.  When stored in the hash tables, the test entry is
-;the number of entries in the OTHERS list that have a higher priority.
-
-(cl:defstruct (entry (:conc-name nil))
-  (test nil)        ;predicate function or count of higher priority others.
-  (fn nil)          ;pprint function
-  (full-spec nil))  ;list of priority and type specifier
-
-(declaim (ftype (function (&optional (or null pprint-dispatch)) (values pprint-dispatch &optional))
-		copy-pprint-dispatch))
-(defun copy-pprint-dispatch (&optional (table *print-pprint-dispatch*))
-  (let* ((table (or table *IPD*))
-	 (new-conses-with-cars
-           (make-hash-table :test #'eq
-	     :size (max (hash-table-count (conses-with-cars table)) 32)))
-	 (new-structures
-	   (make-hash-table :test #'eq
-	     :size (max (hash-table-count (structures table)) 32))))
-    (maphash #'(lambda (key value)
-		 (setf (gethash key new-conses-with-cars) (copy-entry value)))
-	     (conses-with-cars table))
-    (maphash #'(lambda (key value)
-		 (setf (gethash key new-structures) (copy-entry value)))
-	     (structures table))
-    (make-pprint-dispatch
-      :conses-with-cars new-conses-with-cars
-      :structures new-structures
-      :others (copy-list (others table)))))
-
-(declaim (ftype (function ((or symbol cons) (or symbol function)
-			     &optional real (or null pprint-dispatch))
-			  (values null &optional))
-		set-pprint-dispatch))
-(defun set-pprint-dispatch (type-specifier function
-			    &optional (priority 0) (table *print-pprint-dispatch*))
-  #-(or sbcl cmu)
-  (when (or (not (numberp priority)) (complexp priority))
-    (error "invalid PRIORITY argument ~A to SET-PPRINT-DISPATCH" priority))
-  (set-pprint-dispatch+ type-specifier function priority table))
-
-(declaim (ftype (function ((or symbol cons))
-			  (values (member :cons-with-car :structure-type :other) &optional))
-		specifier-category))
-(defun specifier-category (spec)
-  (cond ((and (consp spec)
-	      (eq (car spec) 'cons)
-	      (consp (cdr spec))
-	      (null (cddr spec))
-	      (consp (cadr spec))
-	      (eq (caadr spec) 'member)
-	      (consp (cdadr spec))
-	      (null (cddadr spec)))
-	 :cons-with-car)
-	((and (symbolp spec) (structure-type-p spec)) :structure-type)
-	(T :other)))
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-(defvar *preds-for-specs*
-  '((T always-true) (cons consp) (simple-atom simple-atom-p) (other otherp)
-    (null null) (symbol symbolp) (atom atom) (cons consp)
-    (list listp) (number numberp) (integer integerp)
-    (rational rationalp) (float floatp) (complex complexp)
-    (character characterp) (string stringp) (bit-vector bit-vector-p)
-    (vector vectorp) (simple-vector simple-vector-p)
-    (simple-string simple-string-p) (simple-bit-vector simple-bit-vector-p)
-    (array arrayp) (package packagep) (function functionp)
-    (compiled-function compiled-function-p))))
-
-(declaim (ftype (function ((or symbol cons)) (values (cons (eql lambda)) &optional))
-		specifier-fn))
-(defun specifier-fn (spec)
-  (labels ((convert-body (spec)
-             (cond ((atom spec)
-                    (let ((pred (cadr (assoc spec *preds-for-specs*))))
-                      (if pred `(,pred x) `(typep x ',spec))))
-                   ((member (car spec) '(and or not))
-                    (cons (car spec) (mapcar #'convert-body (cdr spec))))
-                   ((eq (car spec) 'member)
-                    `(member x ',(copy-list (cdr spec))))
-                   ((eq (car spec) 'cons)
-                    `(and (consp x)
-                          ,@(if (cdr spec) `((let ((x (car x)))
-                                               ,(convert-body (cadr spec)))))
-                          ,@(if (cddr spec) `((let ((x (cdr x)))
-                                                ,(convert-body (caddr spec)))))))
-                   ((eq (car spec) 'satisfies)
-                    `(funcall (function ,(cadr spec)) x))
-                   (T `(typep x ',(copy-tree spec))))))
-    `(lambda (x) ,(convert-body spec))))
-
-(declaim (ftype (function ((or symbol cons)
-			   (or symbol function)
-			   real
-			   pprint-dispatch)
-			  (values null &optional))
-		set-pprint-dispatch+))
-(defun set-pprint-dispatch+ (type-specifier function priority table)
-  (let* ((category (specifier-category type-specifier))
-	 (entry
-	   (if function
-	     (make-entry :test (if (not (eq category :other)) nil
-				 (let ((pred (specifier-fn type-specifier)))
-				   (if (and (consp (caddr pred))
-					    (symbolp (caaddr pred))
-					    (equal (cdaddr pred) '(x)))
-				     (symbol-function (caaddr pred))
-				     (compile nil pred))))
-			 :fn function
-			 :full-spec (list priority type-specifier)))))
-    (ecase category
-      (:cons-with-car
-	(cond ((null entry) (remhash (cadadr type-specifier) (conses-with-cars table)))
-	      (T (setf (test entry)
-		       (count-if #'(lambda (e)
-				     (priority-> (car (full-spec e)) priority))
-				 (others table)))
-		 (setf (gethash (cadadr type-specifier) (conses-with-cars table)) entry))))
-      (:structure-type
-	(cond ((null entry) (remhash type-specifier (structures table)))
-	      (T (setf (test entry)
-		       (count-if #'(lambda (e)
-				     (priority-> (car (full-spec e)) priority))
-				 (others table)))
-		 (setf (gethash type-specifier (structures table)) entry))))
-      (:other
-	 (let ((old (car (member type-specifier (others table) :test #'equal
-				 :key #'(lambda (e) (cadr (full-spec e)))))))
-	   (when old
-	     (setf (others table) (delete old (others table)))
-	     (adjust-counts table (car (full-spec old)) -1)))
-	 (when entry
-	   (let ((others (cons nil (others table))))
-	      (do ((l others (cdr l)))
-		  ((null (cdr l)) (rplacd l (list entry)))
-		(when (priority-> priority (car (full-spec (cadr l))))
-		  (rplacd l (cons entry (cdr l)))
-		  (return nil)))
-	      (setf (others table) (cdr others)))
-	   (adjust-counts table priority 1)))))
-  nil)
-
-
-(declaim (ftype (function (real real) (values boolean &optional)) priority->))
-(defun priority-> (x y)
-  (> x y))
-
-
-
-(declaim (ftype (function (pprint-dispatch real integer) (values null &optional)) adjust-counts))
-(defun adjust-counts (table priority delta)
-  (maphash #'(lambda (key value)
-	         (declare (ignore key))
-	       (if (priority-> priority (car (full-spec value)))
-		   (incf (test value) delta)))
-	   (conses-with-cars table))
-  (maphash #'(lambda (key value)
-	         (declare (ignore key))
-	       (if (priority-> priority (car (full-spec value)))
-		   (incf (test value) delta)))
-	   (structures table)))
-
-
-(declaim (ftype (function (t pprint-dispatch) (values (or null (or symbol function)) &optional))
-		get-printer))
-(defun get-printer (object table)
-  (let* ((entry (if (consp object)
-		    (gethash (car object) (conses-with-cars table))
-		    (gethash (type-of object) (structures table)))))
-    (if (not entry)
-	(setq entry (find object (others table) :test #'fits))
-	(loop :repeat (test entry)
-	      :for o :in (others table)
-	      :when (fits object o)
-	        :do (setq entry o) (loop-finish)))
-    (when entry (fn entry))))
-
-
-(declaim (ftype (function (t &optional (or null pprint-dispatch))
-			  (values (or symbol function) boolean &optional))
-		pprint-dispatch))
-(defun pprint-dispatch (object &optional (table *print-pprint-dispatch*))
-  (let* ((table (or table *IPD*))
-	 (fn (get-printer object table)))
-    (values (or fn #'non-pretty-print) (not (null fn)))))
-
-
-(declaim (ftype (function (t entry) (values boolean &optional)) fits))
-(defun fits (obj entry) (and (funcall (test entry) obj) t))
-
-
-(declaim (ftype (function (t) (values (eql t) &optional))
-		always-true))
-(defun always-true (x) (declare (ignore x)) T)
 
 ;               ---- XP STRUCTURES, AND THE INTERNAL ALGORITHM ----
 
@@ -894,7 +686,7 @@
 		 nil)
 		((plusp id)
 		 (cond (interior-cdr?
-			(decf *current-level*)
+			(decf pxp.dispatch:*current-level*)
 			(write-string++ ". #" xp 0 3))
 		       (T (write-char++ #\# xp)))
 		 (print-fixnum xp id)
@@ -926,7 +718,7 @@
       (when (and *circularity-hash-table* (consp object))
 	;;avoid possible double check in handle-logical-block.
 	(setq object (cons (car object) (cdr object))))
-      (let ((printer (if *print-pretty* (get-printer object *print-pprint-dispatch*) nil))
+      (let ((printer (if *print-pretty* (pxp.dispatch:get-printer object pxp.dispatch:*print-pprint-dispatch*) nil))
 	    type)
 	(cond (printer (funcall printer xp object))
 	      ((maybe-print-fast xp object))
@@ -937,18 +729,18 @@
 	       (funcall printer xp object))
 	      ((and *print-pretty* *print-array* (arrayp object)
 		    (not (stringp object)) (not (bit-vector-p object))
-		    (not (structure-type-p (type-of object))))
+		    (not (pxp.dispatch:structure-type-p (type-of object))))
 	       (pretty-array xp object))
 	      (T (let ((stuff
 			 (with-output-to-string (s)
-			   (non-pretty-print object s))))
+			   (pxp.dispatch:non-pretty-print object s))))
 		   (write-string+ stuff xp 0 (length stuff)))))))))
 
 
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
   (with-xp (xp stream)
-    (let ((*current-level* 0)
+    (let ((pxp.dispatch:*current-level* 0)
           (result nil))
       (catch 'line-limit-abbreviation-exit
         (start-block xp nil nil nil)
@@ -1014,8 +806,8 @@
 		     ((:case *print-case*) *print-case*)
 		     ((:gensym *print-gensym*) *print-gensym*)
 		     ((:array *print-array*) *print-array*)
-		     ((:pprint-dispatch *print-pprint-dispatch*)
-		      *print-pprint-dispatch*)
+		     ((:pprint-dispatch pxp.dispatch:*print-pprint-dispatch*)
+		      pxp.dispatch:*print-pprint-dispatch*)
 		     ((:right-margin *print-right-margin*)
 		      *print-right-margin*)
 		     ((:lines *print-lines*) *print-lines*)
@@ -1036,13 +828,6 @@
 	(T
 	  (apply #'cl:write object pairs)))
   object)
-
-(defun non-pretty-print (object s)
-  (cl:write object
-	      :level (if *print-level*
-			 (- *print-level* *current-level*))
-	      :pretty nil
-	      :stream s))
 
 ;This prints a few very common, simple atoms very fast.
 ;Pragmatically, this turns out to be an enormous savings over going to the
@@ -1222,7 +1007,7 @@
 	   `(eval-when (:execute :load-toplevel :compile-toplevel)
 	      (cl:defstruct ,name ,@ body)
 	      (defun ,xp-print-fn (xp obj)
-		(funcall (function ,printer) obj xp *current-level*))
+		(funcall (function ,printer) obj xp pxp.dispatch:*current-level*))
 	      (setf (get ',struct-name 'structure-printer) #',xp-print-fn)
 	      ',(if (consp name) (car name) name)))
 	  ((and (not (safe-assoc :type name))
@@ -1291,7 +1076,7 @@
 				 &body body)
    (when (and circle-check? atsign?)
      (setq circle-check? 'not-first-p))
-  `(let ((*current-level* (1+ *current-level*))
+  `(let ((pxp.dispatch:*current-level* (1+ pxp.dispatch:*current-level*))
 	 (*current-length* -1)
 	 (*parents* *parents*)
 	 ,@(if (and circle-check? atsign?) `((not-first-p (plusp *current-length*)))))
@@ -2231,7 +2016,7 @@
 		check-block-abbreviation))
 (defun check-block-abbreviation (xp args circle-check?)
   (cond ((not (listp args)) (write+ args xp) T)
-	((and *print-level* (> *current-level* *print-level*))
+	((and *print-level* (> pxp.dispatch:*current-level* *print-level*))
 	 (write-char++ #\# XP) (setq *abbreviation-happened* T) T)
 	((and *circularity-hash-table* circle-check?
 	      (eq (circularity-process xp args nil) :subsequent)) T)
@@ -2721,7 +2506,6 @@
 	(t (list (make-bq-struct :code (cond (copy-p ",@") (T ",."))
 				 :data (car loc))))))
 
-(setq *IPD* (make-pprint-dispatch))
 
 ;; BACKQUOTE.
 #+sbcl
@@ -2735,8 +2519,8 @@
            (declare (ignore noise))
 	   (funcall (formatter "`~W")
 		    output (cadr backquote))))
-    (set-pprint-dispatch+ '(cons (member sb-int:quasiquote)) #'print-backquote 0 *IPD*)
-    (set-pprint-dispatch+ 'sb-impl::comma #'print-comma 0 *IPD*)))
+    (pxp.dispatch:set-pprint-dispatch '(cons (member sb-int:quasiquote)) #'print-backquote 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch 'sb-impl::comma #'print-comma 0 pxp.dispatch:*IPD*)))
 
 #+clisp
 (eval-when (:load-toplevel :execute)
@@ -2744,10 +2528,10 @@
            (lambda (output exp &rest noise)
 	     (declare (ignore noise))
 	     (format output "~A~W" prefix (cadr exp)))))
-    (set-pprint-dispatch+ '(cons (member system::backquote)) (printer "`") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member system::unquote)) (printer ",") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member system::nsplice)) (printer ",.") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member system::splice)) (printer ",@") 0 *IPD*)))
+    (pxp.dispatch:set-pprint-dispatch '(cons (member system::backquote)) (printer "`") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member system::unquote)) (printer ",") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member system::nsplice)) (printer ",.") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member system::splice)) (printer ",@") 0 pxp.dispatch:*IPD*)))
 
 #+ecl
 (eval-when (:load-toplevel :execute)
@@ -2755,10 +2539,10 @@
            (lambda (output exp &rest noise)
 	     (declare (ignore noise))
 	     (format output "~A~W" prefix (cadr exp)))))
-    (set-pprint-dispatch+ '(cons (member si:quasiquote)) (printer "`") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member si:unquote)) (printer ",") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member si:unquote-nsplice)) (printer ",.") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member si:unquote-splice)) (printer ",@") 0 *IPD*)))
+    (pxp.dispatch:set-pprint-dispatch '(cons (member si:quasiquote)) (printer "`") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member si:unquote)) (printer ",") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member si:unquote-nsplice)) (printer ",.") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member si:unquote-splice)) (printer ",@") 0 pxp.dispatch:*IPD*)))
 
 #+allegro
 (eval-when (:load-toplevel :execute)
@@ -2766,109 +2550,99 @@
            (lambda (output exp &rest noise)
 	     (declare (ignore noise))
 	     (format output "~A~W" prefix (cadr exp)))))
-    (set-pprint-dispatch+ '(cons (member excl::backquote)) (printer "`") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member excl::bq-comma)) (printer ",") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member excl::bq-comma-dot)) (printer ",.") 0 *IPD*)
-    (set-pprint-dispatch+ '(cons (member excl::bq-comma-atsign)) (printer ",@") 0 *IPD*)))
+    (pxp.dispatch:set-pprint-dispatch '(cons (member excl::backquote)) (printer "`") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member excl::bq-comma)) (printer ",") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member excl::bq-comma-dot)) (printer ",.") 0 pxp.dispatch:*IPD*)
+    (pxp.dispatch:set-pprint-dispatch '(cons (member excl::bq-comma-atsign)) (printer ",@") 0 pxp.dispatch:*IPD*)))
 
 #+(or :cmu :abcl #.(cl:if (cl:find-package :fare-quasiquote) '(and) '(or)))
 (eval-when (:load-toplevel :execute)
-(set-pprint-dispatch+ 'bq-struct #'bq-struct-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-cons*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-list*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-list**)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-append*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-nconc*)) #'bq-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-vector*)) #'bq-vector-print 0 *IPD*)
-(set-pprint-dispatch+ `(cons (member ,@*bq-list-to-vector*)) #'bq-vector-print 0 *IPD*)
+(pxp.dispatch:set-pprint-dispatch 'bq-struct #'bq-struct-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-cons*)) #'bq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-list*)) #'bq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-list**)) #'bq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-append*)) #'bq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-nconc*)) #'bq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-vector*)) #'bq-vector-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch `(cons (member ,@*bq-list-to-vector*)) #'bq-vector-print 0 pxp.dispatch:*IPD*)
 ) ; Eval-when.
 
-(set-pprint-dispatch+ '(satisfies function-call-p) #'fn-call -5 *IPD*)
-(set-pprint-dispatch+ 'cons #'pprint-fill -10 *IPD*)
+(pxp.dispatch:set-pprint-dispatch '(satisfies function-call-p) #'fn-call -5 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch 'cons #'pprint-fill -10 pxp.dispatch:*IPD*)
 
-(set-pprint-dispatch+ '(cons (member defstruct)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member block)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member case)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member catch)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member ccase)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member cond)) #'cond-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member ctypecase)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defconstant)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member define-setf-expander)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defmacro)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member define-modify-macro)) #'dmm-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defparameter)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defsetf)) #'defsetf-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member cl:defstruct)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member deftype)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defun)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member defvar)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member do)) #'do-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member do*)) #'do-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member do-all-symbols)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member do-external-symbols)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member do-symbols)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member dolist)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member dotimes)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member ecase)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member etypecase)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member eval-when)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member flet)) #'flet-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member function)) #'function-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member labels)) #'flet-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member lambda)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member let)) #'let-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member let*)) #'let-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member locally)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member loop)) #'pretty-loop 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member macrolet)) #'flet-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member multiple-value-bind)) #'mvb-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member multiple-value-setq)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member prog)) #'prog-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member prog*)) #'prog-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member progv)) #'defun-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member psetf)) #'setq-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member psetq)) #'setq-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member quote)) #'quote-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member return-from)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member setf)) #'setq-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member setq)) #'setq-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member tagbody)) #'tagbody-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member throw)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member typecase)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member unless)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member unwind-protect)) #'up-print 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member when)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member with-input-from-string)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member with-open-file)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member with-open-stream)) #'block-like 0 *IPD*)
-(set-pprint-dispatch+ '(cons (member with-output-to-string)) #'block-like 0 *IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defstruct)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member block)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member case)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member catch)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member ccase)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member cond)) #'cond-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member ctypecase)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defconstant)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member define-setf-expander)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defmacro)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member define-modify-macro)) #'dmm-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defparameter)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defsetf)) #'defsetf-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member cl:defstruct)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member deftype)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defun)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member defvar)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member do)) #'do-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member do*)) #'do-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member do-all-symbols)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member do-external-symbols)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member do-symbols)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member dolist)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member dotimes)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member ecase)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member etypecase)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member eval-when)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member flet)) #'flet-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member function)) #'function-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member labels)) #'flet-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member lambda)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member let)) #'let-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member let*)) #'let-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member locally)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member loop)) #'pretty-loop 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member macrolet)) #'flet-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member multiple-value-bind)) #'mvb-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member multiple-value-setq)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member prog)) #'prog-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member prog*)) #'prog-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member progv)) #'defun-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member psetf)) #'setq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member psetq)) #'setq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member quote)) #'quote-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member return-from)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member setf)) #'setq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member setq)) #'setq-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member tagbody)) #'tagbody-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member throw)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member typecase)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member unless)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member unwind-protect)) #'up-print 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member when)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member with-input-from-string)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member with-open-file)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member with-open-stream)) #'block-like 0 pxp.dispatch:*IPD*)
+(pxp.dispatch:set-pprint-dispatch '(cons (member with-output-to-string)) #'block-like 0 pxp.dispatch:*IPD*)
 
 (defun pprint-dispatch-print (xp table)
-  (let ((stuff (copy-list (others table))))
-    (maphash #'(lambda (key val) (declare (ignore key))
-		       (push val stuff))
-	     (conses-with-cars table))
-    (maphash #'(lambda (key val) (declare (ignore key))
-		       (push val stuff))
-	     (structures table))
-    (setq stuff (sort stuff #'priority-> :key #'(lambda (x) (car (full-spec x)))))
+  (let ((stuff (pxp.dispatch:pprint-dispatch-entries table)))
     (pprint-logical-block (xp stuff :prefix "#<" :suffix ">")
       (format xp (formatter "pprint dispatch table containing ~A entries: ")
 	      (length stuff))
       (loop (pprint-exit-if-list-exhausted)
-	    (let ((entry (pprint-pop)))
-	      (format xp (formatter "~{~_P=~4D ~W~} F=~W ")
-		      (full-spec entry) (fn entry)))))))
+	    (pxp.dispatch:show (pprint-pop) xp)))))
 
-(setf (get 'pprint-dispatch 'structure-printer) #'pprint-dispatch-print)
+(setf (get 'pxp.dispatch:pprint-dispatch 'structure-printer) #'pprint-dispatch-print)
 
-(set-pprint-dispatch+ 'pprint-dispatch #'pprint-dispatch-print 0 *IPD*)
+(pxp.dispatch:set-pprint-dispatch 'pxp.dispatch:pprint-dispatch #'pprint-dispatch-print 0 pxp.dispatch:*IPD*)
 
 
 ;so only happens first time is loaded.
-(when (eq *print-pprint-dispatch* T)
-  (setq *print-pprint-dispatch* (copy-pprint-dispatch nil)))
+(pxp.dispatch:initialize)
 
 (defun install (&key (package *package*) (macro nil) (shadow T) (remove nil))
   (when (not (packagep package)) (setq package (find-package package)))

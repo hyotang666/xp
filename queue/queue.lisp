@@ -50,7 +50,7 @@
   '(or newline-kind newline-fresh-kind indent-kind))
 (deftype Qpos ()
   "Total position corresponding to this entry"
-  '(integer 0 #.queue-min-size))
+  'pxp.adjustable-vector:index)
 (deftype Qdepth ()
   "Depth in blocks of this entry."
   '(integer 0 *))
