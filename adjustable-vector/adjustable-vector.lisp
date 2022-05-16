@@ -65,6 +65,8 @@
     ;; The Body
     `(let ((,?next-index ,<next-index>)
 	   (,?object ,<object>))
+       #+sbcl ; Due to array element type is unknown.
+       (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
        (when (and (< ,(- min-size entry-size) ,?next-index) ; seldom happens
 		  (< (- (length (,accessor ,?object)) ,entry-size)
 		     ,?next-index))
