@@ -36,6 +36,8 @@
     ))
 (in-package :pxp.stack)
 
+(declaim (optimize speed))
+
 (eval-when (:execute :load-toplevel :compile-toplevel) ; used at compile time.
   (defvar block-stack-entry-size 1)
   (defvar prefix-stack-entry-size 5))
@@ -56,6 +58,15 @@
 (deftype prefix-stack-entry ()
   '(or prefix-ptr suffix-ptr non-blank-prefix-ptr initial-prefix-ptr section-start-line))
 
+(define-compiler-macro block-stack-ptr (stack)
+  `(the pxp.adjustable-vector:index (slot-value ,stack 'block-stack-ptr)))
+
+(define-compiler-macro prefix-stack-ptr (stack)
+  `(the fixnum (slot-value ,stack 'prefix-stack-ptr)))
+
+(define-compiler-macro prefix (stack)
+  `(the (pxp.adjustable-vector:adjustable-vector character) (slot-value ,stack 'prefix)))
+
 (defclass stack ()
   ((depth-in-blocks
      :initform nil :initarg :depth-in-blocks
@@ -71,8 +82,7 @@
        	   "following block specific value."
        	   "SECTION-START total position where the section (see AIM-1102)"
        	   "that is rightmost in the queue started."))
-   (block-stack-ptr :initform nil :initarg :block-stack-ptr
-       	     :accessor block-stack-ptr)
+   (block-stack-ptr :initarg :block-stack-ptr :accessor block-stack-ptr)
    (prefix :initform (pxp.adjustable-vector:new #.pxp.buffer:buffer-min-size :element-type 'character)
            :initarg :prefix :accessor prefix
            :documentation
@@ -83,8 +93,7 @@
      :documentation
      "This stack is pushed and popped in accordance with the way blocks
      are nested at the moment things are taken off the queue and printed.")
-   (prefix-stack-ptr :initform nil :initarg :prefix-stack-ptr
-       	      :accessor prefix-stack-ptr)
+   (prefix-stack-ptr :initarg :prefix-stack-ptr :accessor prefix-stack-ptr)
    (suffix :initform (pxp.adjustable-vector:new #.pxp.buffer:buffer-min-size :element-type 'character)
            :initarg :suffix :accessor suffix
            :documentation
@@ -93,15 +102,15 @@
            is stored in reverse order.")))
 
 (defmacro prefix-ptr (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (prefix-stack-ptr ,stack)))
+  `(the fixnum (pxp.adjustable-vector:ref (prefix-stack ,stack) (prefix-stack-ptr ,stack))))
 (defmacro suffix-ptr (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (+ (prefix-stack-ptr ,stack) 1)))
+  `(the fixnum (pxp.adjustable-vector:ref (prefix-stack ,stack) (+ (prefix-stack-ptr ,stack) 1))))
 (defmacro non-blank-prefix-ptr (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (+ (prefix-stack-ptr ,stack) 2)))
+  `(the fixnum (pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 2)))))
 (defmacro initial-prefix-ptr (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (+ (prefix-stack-ptr ,stack) 3)))
+  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 3))))
 (defmacro section-start-line (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (+ (prefix-stack-ptr ,stack) 4)))
+  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 4))))
 (defmacro section-start (stack)
   `(pxp.adjustable-vector:ref (block-stack ,stack) (block-stack-ptr ,stack)))
 
@@ -110,24 +119,6 @@
   (setf (block-stack-ptr stack) 0)
   (setf (section-start stack) 0)
   (setf (prefix-stack-ptr stack) #.(- prefix-stack-entry-size)))
-
-(defmacro check-size (xp vect ptr)
-  (let* ((min-size
-	   (symbol-value
-	     (intern (concatenate 'string (string vect) "-MIN-SIZE")
-		     (find-package :pxp))))
-	 (entry-size
-	   (symbol-value
-	     (intern (concatenate 'string (string vect) "-ENTRY-SIZE")
-		     (find-package :pxp)))))
-    `(when (and (> ,ptr ,(- min-size entry-size)) ;seldom happens
-		(> ,ptr (- (length (,vect ,xp)) ,entry-size)))
-       (let* ((old (,vect ,xp))
-	      (new (make-array (+ ,ptr ,(if (= entry-size 1) 50
-					    (* 10 entry-size)))
-			       :element-type (array-element-type old))))
-	 (replace new old)
-	 (setf (,vect ,xp) new)))))
 
 (declaim (ftype (function (stack) (values &optional))
 		push-block-stack))
@@ -145,10 +136,11 @@
 
 (defun show-detail (stack output)
   (unless (minusp (prefix-stack-ptr stack))
-    (format output "~&prefix= ")
+    (funcall (formatter "~&prefix= ") output)
     (pxp.adjustable-vector:write (prefix stack) output :end (max (prefix-ptr stack) 0))
     (format output "~&suffix= ")
     (pxp.adjustable-vector:write (suffix stack) output :end (max (suffix-ptr stack) 0))))
+
 (declaim (ftype (function (stack pointer) (values &optional)) set-indentation-prefix))
 (defun set-indentation-prefix (stack new-position)
   (let ((new-ind (max (non-blank-prefix-ptr stack) new-position)))
@@ -161,10 +153,13 @@
 
 (declaim (ftype (function (stack string) (values &optional)) set-prefix))
 (defun set-prefix (stack prefix-string)
+  #+sbcl ; due to not simple-array
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (pxp.adjustable-vector:replace (prefix stack) prefix-string
 				 :start1 (- (prefix-ptr stack) (length prefix-string)))
   (setf (non-blank-prefix-ptr stack) (prefix-ptr stack))
   (values))
+
 (declaim (ftype (function (stack)
 			  (values &optional))
 		push-prefix-stack
@@ -175,7 +170,7 @@
       (setq old-prefix (prefix-ptr stack)
 	    old-suffix (suffix-ptr stack)
 	    old-non-blank (non-blank-prefix-ptr stack)))
-    (incf (prefix-stack-ptr stack) #.prefix-stack-entry-size)
+    (incf (the fixnum (prefix-stack-ptr stack)) #.prefix-stack-entry-size)
     (pxp.adjustable-vector:overflow-protect (prefix-stack stack (prefix-stack-ptr stack)
 							  :entry-size #.prefix-stack-entry-size
 							  :min-size #.prefix-stack-min-size)
@@ -185,25 +180,25 @@
   (values))
 
 (defun pop-prefix-stack (stack)
-  (decf (prefix-stack-ptr stack) #.prefix-stack-entry-size)
+  (decf (the fixnum (prefix-stack-ptr stack)) #.prefix-stack-entry-size)
   (values))
 
 (defun show-ptr (stack output)
   (unless (minusp (prefix-stack-ptr stack))
-    (format output "~&initial-prefix-ptr prefix-ptr suffix-ptr non-blank start-line")
+    (funcall (formatter "~&initial-prefix-ptr prefix-ptr suffix-ptr non-blank start-line") output)
     (do ((save (prefix-stack-ptr stack)))
       ((minusp (prefix-stack-ptr stack)) (setf (prefix-stack-ptr stack) save))
-      (format output "~& ~19A~11A~11A~10A~A"
-		 (initial-prefix-ptr stack) (prefix-ptr stack) (suffix-ptr stack)
-		 (non-blank-prefix-ptr stack) (section-start-line stack))
+      (funcall (formatter "~& ~19A~11A~11A~10A~A") output
+	       (initial-prefix-ptr stack) (prefix-ptr stack) (suffix-ptr stack)
+	       (non-blank-prefix-ptr stack) (section-start-line stack))
       (pop-prefix-stack stack))))
 
 (defun show-section-start (stack output)
   (unless (minusp (block-stack-ptr stack))
-    (format output "~&section-start")
+    (funcall (formatter "~&section-start") output)
     (do ((save (block-stack-ptr stack)))
       ((minusp (block-stack-ptr stack)) (setf (block-stack-ptr stack) save))
-      (format output " ~D" (section-start stack))
+      (funcall (formatter " ~D") output (section-start stack))
       (pop-block-stack stack))))
 
 (defun set-reverse-suffix (stack)
