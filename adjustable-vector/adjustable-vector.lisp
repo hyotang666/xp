@@ -15,6 +15,8 @@
     ))
 (in-package :pxp.adjustable-vector)
 
+(declaim (optimize speed))
+
 ;; Type
 
 (deftype index () '(mod #.array-total-size-limit))
@@ -22,6 +24,8 @@
 ;; CREATE
 
 (defun new (size &key (element-type t))
+  #+sbcl ; Due to ELEMENT-TYPE is unknown in compile time.
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (make-array size :element-type element-type))
 
 ;; REFER
@@ -33,6 +37,8 @@
 (if (ignore-errors (fdefinition '(setf aref)))
   (setf (fdefinition '(setf ref)) (fdefinition '(setf aref)))
   (defun (setf ref) (new adjustable-vector index)
+    #+sbcl ; Due to upgraded element type is unknown at compile time.
+    (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
     (setf (aref adjustable-vector index) new)))
 
 ;; OVERFLOW-PROTECT
@@ -41,6 +47,7 @@
 				      &key (entry-size 1)
 				      (min-size 256))
 			    &body body &environment env)
+  (declare ((unsigned-byte 32) min-size entry-size))
   ;; KLUDGE:
   (assert (constantp entry-size env))
   (assert (constantp min-size env))
@@ -72,6 +79,9 @@
 
 ;;; As abstraction barrier.
 
+(declaim (ftype (function (vector stream &key (:start (or null (mod #.array-total-size-limit)))
+				  (:end (or null (mod #.array-total-size-limit)))))
+		write))
 (defun write (adjustable-vector output &key start end)
   (cond
     ((stringp adjustable-vector)
