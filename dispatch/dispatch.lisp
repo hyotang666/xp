@@ -17,6 +17,9 @@
     #:structure-type-p
     ))
 (in-package :pxp.dispatch)
+
+(declaim (optimize speed))
+
 (defun structure-type-p (x)
   (typep (find-class x nil) 'structure-class))
 
@@ -26,6 +29,7 @@
 (defvar *IPD* nil ;see initialization at end of file.
   "initial print dispatch table.")
 
+(declaim (type (mod #.most-positive-fixnum) *current-level*))
 (defvar *current-level* 0
   "current depth in logical blocks.")
 
@@ -97,8 +101,9 @@
 (defun <specifier-fn> (spec)
   (labels ((convert-body (spec)
              (cond ((atom spec)
-                    (let ((pred (cadr (assoc spec *preds-for-specs*))))
-                      (if pred `(,pred x) `(typep x ',spec))))
+		    (locally (declare (symbol spec))
+                      (let ((pred (cadr (assoc spec *preds-for-specs*))))
+                        (if pred `(,pred x) `(typep x ',spec)))))
                    ((member (car spec) '(and or not))
                     (cons (car spec) (mapcar #'convert-body (cdr spec))))
                    ((eq (car spec) 'member)
@@ -116,19 +121,21 @@
 
 (declaim (ftype (function (real real) (values boolean &optional)) priority->))
 (defun priority-> (x y)
+  #+sbcl ; due to real.
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (> x y))
 
-(declaim (ftype (function (pprint-dispatch real integer) (values null &optional)) adjust-counts))
+(declaim (ftype (function (pprint-dispatch real fixnum) (values null &optional)) adjust-counts))
 (defun adjust-counts (table priority delta)
   (maphash #'(lambda (key value)
 	         (declare (ignore key))
 	       (if (priority-> priority (car (full-spec value)))
-		   (incf (test value) delta)))
+		   (incf (the fixnum (test value)) delta)))
 	   (conses-with-cars table))
   (maphash #'(lambda (key value)
 	         (declare (ignore key))
 	       (if (priority-> priority (car (full-spec value)))
-		   (incf (test value) delta)))
+		   (incf (the fixnum (test value)) delta)))
 	   (structures table)))
 
 (declaim (ftype (function ((or symbol cons) (or symbol function)
@@ -185,7 +192,7 @@
   nil)
 
 (declaim (ftype (function (t entry) (values boolean &optional)) fits))
-(defun fits (obj entry) (and (funcall (test entry) obj) t))
+(defun fits (obj entry) (and (funcall (coerce (test entry) 'function) obj) t))
 
 (declaim (ftype (function (t pprint-dispatch) (values (or null (or symbol function)) &optional))
 		get-printer))
@@ -195,7 +202,7 @@
 		    (gethash (type-of object) (structures table)))))
     (if (not entry)
 	(setq entry (find object (others table) :test #'fits))
-	(loop :repeat (test entry)
+	(loop :for count :of-type fixnum :below (test entry)
 	      :for o :in (others table)
 	      :when (fits object o)
 	        :do (setq entry o) (loop-finish)))
@@ -204,7 +211,7 @@
 (defun non-pretty-print (object s)
   (write object
 	 :level (if *print-level*
-		  (- *print-level* *current-level*))
+		  (- (the fixnum *print-level*) *current-level*))
 	 :pretty nil
 	 :stream s))
 
@@ -229,8 +236,8 @@
     (sort stuff #'priority-> :key #'(lambda (x) (car (full-spec x))))))
 
 (defun show (entry output)
-  (format output (formatter "~{~_P=~4D ~W~} F=~W ")
-	  (full-spec entry) (fn entry)))
+  (funcall (formatter "~{~_P=~4D ~W~} F=~W ")
+	   output (full-spec entry) (fn entry)))
 
 (defun initialize ()
   (when (eq *print-pprint-dispatch* T)
