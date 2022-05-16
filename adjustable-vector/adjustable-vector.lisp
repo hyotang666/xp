@@ -7,6 +7,7 @@
     #:write
     #:ref
     #:index ; type
+    #:adjustable-vector ; type
     ;; Re-Export from common-lisp as abstraction barrier.
     #:fill
     #:replace
@@ -20,6 +21,9 @@
 ;; Type
 
 (deftype index () '(mod #.array-total-size-limit))
+
+(deftype adjustable-vector (&optional (type t))
+  `(simple-array ,type (*)))
 
 ;; CREATE
 
