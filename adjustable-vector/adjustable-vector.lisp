@@ -45,9 +45,13 @@
   (assert (constantp entry-size env))
   (assert (constantp min-size env))
   ;; Trivial-syntax-check.
-  (assert (fboundp accessor) ()
-	  "ACCESSOR must be the function name that can read adjustable-vector from ~S, but ~S."
-	  <object> accessor)
+  (eval-when (:load-toplevel)
+    ;; CLHS allow to use-then-define style code.
+    ;; So the accessor may not exist in compile time.
+    ;; We check accessor existence only in load-time.
+    (assert (fboundp accessor) ()
+            "ACCESSOR must be the function name that can read adjustable-vector from ~S, but ~S."
+            <object> accessor))
   ;; Binding.
   (let* ((?next-index (gensym "NEXT-INDEX"))
 	 (?object (gensym "OBJECT")))
