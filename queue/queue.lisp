@@ -29,6 +29,8 @@
     ))
 (in-package :pxp.queue)
 
+(declaim (optimize speed))
+
 ;;;; Use vector as table.
 ;;;; Each row has seven columns.
 
@@ -53,14 +55,14 @@
   'pxp.adjustable-vector:index)
 (deftype Qdepth ()
   "Depth in blocks of this entry."
-  '(integer 0 *))
+  '(mod #.array-total-size-limit))
 (deftype Qend ()
   "Offset to entry marking end of section this entry starts. (NIL until known.)
   Only :start-block and non-literal :newline entries can start sections."
-  '(or null (integer 0 *)))
+  '(or null (mod #.array-total-size-limit)))
 (deftype Qoffset ()
   "Offset to :END-BLOCK for :START-BLOCK (NIL until known)."
-  '(or null (integer 0 *)))
+  '(or null (mod #.array-total-size-limit)))
 (deftype Qarg ()
   "QARG for :IND indentation delta
        for :START-BLOCK suffix in the block if any.
@@ -74,14 +76,21 @@
 
 (defmacro Qtype   (queue index) `(pxp.adjustable-vector:ref (queue ,queue) ,index))
 (defmacro Qkind   (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (1+ ,index)))
-(defmacro Qpos    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ ,index 2)))
-(defmacro Qdepth  (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ ,index 3)))
-(defmacro Qend    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ ,index 4)))
-(defmacro Qoffset (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ ,index 5)))
-(defmacro Qarg    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ ,index 6)))
+(defmacro Qpos    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 2)))
+(defmacro Qdepth  (queue index) `(the Qdepth (pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 3))))
+(defmacro Qend    (queue index) `(the Qend (pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 4))))
+(defmacro Qoffset (queue index) `(the Qoffset (pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 5))))
+(defmacro Qarg    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 6)))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; PXP.ADJUSTABLE-VECTOR:OVERFLOW-PROTECT needs this eval-when.
+(define-compiler-macro queue (queue)
+  `(the (pxp.adjustable-vector:adjustable-vector Qentry) (slot-value ,queue 'queue)))
+
+(define-compiler-macro Qleft (queue)
+  `(the fixnum (slot-value ,queue 'Qleft)))
+
+(define-compiler-macro Qright (queue)
+  `(the fixnum (slot-value ,queue 'Qright)))
+
 (defclass queue ()
   ((queue :initform (pxp.adjustable-vector:new #.queue-min-size :element-type 'Qentry)
           :initarg :queue :accessor queue
@@ -90,7 +99,7 @@
    (Qleft :initform nil :initarg :qleft :accessor Qleft
           :documentation "Point to the next entry to dequeue.")
    (Qright :initform nil :initarg :qright :accessor Qright
-           :documentation "Point to the last entry enqueued."))))
+           :documentation "Point to the last entry enqueued.")))
 
 (defun initialize (xp)
   (setf (Qleft xp) 0)
@@ -99,7 +108,8 @@
 (defun Qemptyp (queue)
   (> (Qleft queue) (Qright queue)))
 
-(defmacro Qnext (index) `(+ ,index #.queue-entry-size))
+(defmacro Qnext (index) `(the (mod #.(- array-total-size-limit queue-entry-size))
+			      (+ ,index #.queue-entry-size)))
 
 (defmacro for-each (((ptr &rest column+) <queue> &key consume) &body body)
   "(for-each ((Ptr Column+) Queue &key Consume) Body)
@@ -120,6 +130,7 @@ BLOCK NIL is implicitly achieved."
 	   `(Qemptyp ,?queue)
 	   `(not (< ,?ptr (Qright ,?queue))))
 	 ,@(when consume `((initialize ,?queue))))
+       (declare (fixnum ,?ptr))
        (symbol-macrolet ,(mapcar (lambda (column)
 				   (let ((accessor (uiop:find-symbol* (symbol-name column) :pxp.queue)))
 				     ;; Trivial-syntax-check
@@ -130,6 +141,7 @@ BLOCK NIL is implicitly achieved."
        ,@(when consume
 	   `((setf (Qleft ,?queue) (Qnext (Qleft ,?queue))))))))
 
+(declaim (ftype (function (queue fixnum) (values null &optional)) sync-depth))
 (defun sync-depth (xp depth)
   (for-each ((ptr Qend Qdepth Qtype) xp)
     (when (and (null Qend)
@@ -137,12 +149,13 @@ BLOCK NIL is implicitly achieved."
 	       (member Qtype '(:newline :start-block)))
       (setf Qend (- (Qright xp) ptr)))))
 
+(declaim (ftype (function (queue fixnum) (values null &optional)) sync-offset))
 (defun sync-offset (xp depth)
   (for-each ((ptr Qdepth Qtype Qoffset) xp)
     (when (and (= Qdepth depth)
 	       (eq Qtype :start-block)
 	       (null Qoffset))
-      (setf Qoffset (- (Qright xp) ptr))
+      (setf Qoffset (- (the (mod #.(- array-total-size-limit queue-entry-size)) (Qright xp)) ptr))
       (return nil))))
 
 (declaim (ftype (function (queue Qtype (or null Qkind)
@@ -153,10 +166,10 @@ BLOCK NIL is implicitly achieved."
 			  (values &optional))
 		enqueue))
 (defun enqueue (xp type kind &key arg depth position sync)
-  (incf (Qright xp) #.queue-entry-size)
+  (incf (the fixnum (Qright xp)) #.queue-entry-size)
   (when (> (Qright xp) #.(- queue-min-size queue-entry-size))
     (replace (queue xp) (queue xp) :start2 (Qleft xp) :end2 (Qright xp))
-    (setf (Qright xp) (- (Qright xp) (Qleft xp)))
+    (setf (Qright xp) (the fixnum (- (Qright xp) (Qleft xp))))
     (setf (Qleft xp) 0))
   (pxp.adjustable-vector:overflow-protect (queue xp (Qright xp)
 						 :entry-size #.queue-entry-size
@@ -175,25 +188,27 @@ BLOCK NIL is implicitly achieved."
 
 (defun show (xp s)
   (unless (Qemptyp xp)
-    (format s "~&ptr type         kind           pos depth end offset arg")
+    (funcall (formatter "~&ptr type         kind           pos depth end offset arg") s)
     (for-each ((p Qtype Qkind Qpos Qend Qoffset Qarg) xp)
-      (format s "~&~4A~13A~15A~4A~6A~4A~7A~A"
-	      (/ (- p (Qleft xp)) #.queue-entry-size)
+      (funcall (formatter "~&~4A~13A~15A~4A~6A~4A~7A~A") s
+	      (/ (the fixnum (- p (Qleft xp))) #.queue-entry-size)
 	      Qtype
 	      (if (member Qtype '(:newline :ind)) Qkind "")
 	      (pxp.buffer:BP<-TP xp Qpos)
 	      (Qdepth xp p)
 	      (if (not (member Qtype '(:newline :start-block))) ""
 		(and Qend
-		     (/ (- (+ p Qend) (Qleft xp)) #.queue-entry-size)))
+		     (/ (the fixnum (- (+ p Qend) (Qleft xp))) #.queue-entry-size)))
 	      (if (not (eq Qtype :start-block)) ""
 		(and Qoffset
-		     (/ (- (+ p Qoffset) (Qleft xp)) #.queue-entry-size)))
+		     (/ (the fixnum (- (+ p Qoffset) (Qleft xp))) #.queue-entry-size)))
 	      (if (not (member Qtype '(:ind :start-block :end-block))) ""
 		QarG)))))
 
 (defun flush (queue)
   (setf (Qleft queue) (Qnext (Qright queue))))
 
+(declaim (ftype (function (queue (mod #.array-total-size-limit)) (values boolean &optional))
+		fresh-newline-p))
 (defun fresh-newline-p (queue index)
   (typep (Qkind queue index) 'newline-fresh-kind))
