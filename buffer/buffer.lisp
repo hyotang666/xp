@@ -127,9 +127,6 @@
 	(buffer-ptr buffer) 0)
   )
 
-(defun inc-ptr (buffer)
-  (setf (charpos buffer) (the pxp.adjustable-vector:index (+ (charpos buffer) (buffer-ptr buffer)))))
-
 ;;;; BUFFER-PTR
 
 (defun total-position<-buffer-position (buffer)
@@ -193,9 +190,11 @@ Each character is filtered by the function MODE."
   (- ptr (buffer-offset buffer)))
 
 (defun flush (buffer)
-  (setf (buffer-offset buffer) (the fixnum (+ (buffer-offset buffer) (buffer-ptr buffer))))
-  (inc-ptr buffer)
-  (setf (buffer-ptr buffer) 0))
+  (setf (buffer-offset buffer)
+	  (the fixnum (+ (buffer-offset buffer) (buffer-ptr buffer)))
+	(charpos buffer)
+	  (the pxp.adjustable-vector:index (+ (charpos buffer) (buffer-ptr buffer)))
+	(buffer-ptr buffer) 0))
 
 (defun last-non-blank (buffer &key end)
   (pxp.adjustable-vector:position #\space (the (pxp.adjustable-vector:adjustable-vector character)
