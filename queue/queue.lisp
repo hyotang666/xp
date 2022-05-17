@@ -134,7 +134,10 @@ BLOCK NIL is implicitly achieved."
        (symbol-macrolet ,(mapcar (lambda (column)
 				   (let ((accessor (uiop:find-symbol* (symbol-name column) :pxp.queue)))
 				     ;; Trivial-syntax-check
-				     (assert (subtypep accessor 'Qentry))
+				     #-(or abcl)
+				     ;; abcl fail when ACCESSOR is (member Qpos Qdepth Qarg).
+				     (assert (subtypep accessor 'Qentry) ()
+		                       "~S must be Qentry." accessor)
 				     `(,column (,accessor ,?queue ,?ptr))))
 				 column+)
          ,@body)
