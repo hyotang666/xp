@@ -39,7 +39,7 @@
   ;; In other words, used in read time, so eval-when is needed.
   (defconstant queue-entry-size 7) ; columns
 
-  (defconstant queue-min-size #.(* 75. queue-entry-size))) ; minimum rows.
+  (defconstant queue-min-size (* 75. queue-entry-size))) ; minimum rows.
 
 (deftype Qindex () 'pxp.adjustable-vector:index)
 
