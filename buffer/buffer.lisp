@@ -201,37 +201,38 @@ Each character is filtered by the function MODE."
 					       (buffer buffer))
 				  :test-not #'char= :from-end T :end end))
 
-(declaim (ftype (function (buffer fixnum &key
-				  (:prefix (pxp.adjustable-vector:adjustable-vector character))
-				  (:prefix-end pxp.adjustable-vector:index)
-				  (:out-point pxp.adjustable-vector:index))
-			  (values null &optional))
-		shift))
-(defun shift (buffer change &key prefix prefix-end out-point)
-  (flet ((set-prefix! (adjustable-vector prefix end2)
-           (pxp.adjustable-vector:replace adjustable-vector prefix :end2 end2))
-	 (shift! (adjustable-vector start1 start2 end2)
-           (pxp.adjustable-vector:replace adjustable-vector adjustable-vector
-					  :start1 start1
-					  :start2 start2
-					  :end2 end2)))
-    (declare (ftype (function ((pxp.adjustable-vector:adjustable-vector character)
-			       (pxp.adjustable-vector:adjustable-vector character)
-			       pxp.adjustable-vector:index)
-			      (values (pxp.adjustable-vector:adjustable-vector character) &optional))
-		    set-prefix!)
-	     (ftype (function ((pxp.adjustable-vector:adjustable-vector character)
-			       pxp.adjustable-vector:index
-			       pxp.adjustable-vector:index
-			       pxp.adjustable-vector:index)
-			      (values (pxp.adjustable-vector:adjustable-vector character) &optional))
-		    shift!))
-    (setf (charpos buffer) 0)
-    (when (plusp change) ; almost never happens
-      (pxp.adjustable-vector:overflow-protect
-	  (buffer buffer (+ (buffer-ptr buffer) change))))
-    (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
-    (set-prefix! (buffer buffer) prefix prefix-end)
-    (setf (buffer-ptr buffer) (the pxp.adjustable-vector:index (+ (buffer-ptr buffer) change)))
-    (setf (buffer-offset buffer) (the fixnum (- (buffer-offset buffer) change))))
+(declaim (ftype (function (buffer &key
+                                  (:prefix (pxp.adjustable-vector:adjustable-vector character))
+                                  (:prefix-end pxp.adjustable-vector:index)
+                                  (:out-point pxp.adjustable-vector:index))
+                          (values null &optional))
+                shift))
+(defun shift (buffer &key prefix prefix-end out-point)
+  (let ((change (- prefix-end out-point)))
+    (flet ((set-prefix! (adjustable-vector prefix end2)
+             (pxp.adjustable-vector:replace adjustable-vector prefix :end2 end2))
+           (shift! (adjustable-vector start1 start2 end2)
+             (pxp.adjustable-vector:replace adjustable-vector adjustable-vector
+                                            :start1 start1
+                                            :start2 start2
+                                            :end2 end2)))
+      (declare (ftype (function ((pxp.adjustable-vector:adjustable-vector character)
+                                 (pxp.adjustable-vector:adjustable-vector character)
+                                 pxp.adjustable-vector:index)
+                                (values (pxp.adjustable-vector:adjustable-vector character) &optional))
+                      set-prefix!)
+               (ftype (function ((pxp.adjustable-vector:adjustable-vector character)
+                                 pxp.adjustable-vector:index
+                                 pxp.adjustable-vector:index
+                                 pxp.adjustable-vector:index)
+                                (values (pxp.adjustable-vector:adjustable-vector character) &optional))
+                      shift!))
+      (setf (charpos buffer) 0)
+      (when (plusp change) ; almost never happens
+        (pxp.adjustable-vector:overflow-protect
+            (buffer buffer (+ (buffer-ptr buffer) change))))
+      (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
+      (set-prefix! (buffer buffer) prefix prefix-end)
+      (setf (buffer-ptr buffer) (the pxp.adjustable-vector:index (+ (buffer-ptr buffer) change)))
+      (setf (buffer-offset buffer) (the fixnum (- (buffer-offset buffer) change)))))
   nil)

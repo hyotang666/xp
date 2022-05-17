@@ -610,9 +610,8 @@
 	 (prefix-end
 	   (cond ((pxp.queue:fresh-newline-p xp Qentry)
 		  (pxp.stack:non-blank-prefix-ptr xp))
-		 (T (pxp.stack:prefix-ptr xp))))
-	 (change (- prefix-end out-point)))
-    (pxp.buffer:shift xp change
+		 (T (pxp.stack:prefix-ptr xp)))))
+    (pxp.buffer:shift xp
 		      :prefix (pxp.stack:prefix xp)
 		      :prefix-end prefix-end
 		      :out-point out-point)
