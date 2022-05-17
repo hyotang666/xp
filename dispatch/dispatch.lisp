@@ -21,7 +21,8 @@
 (declaim (optimize speed))
 
 (defun structure-type-p (x)
-  (typep (find-class x nil) 'structure-class))
+  (and (symbolp x)
+       (typep (find-class x nil) 'structure-class)))
 
 (defvar *print-pprint-dispatch* t ;see initialization at end of file.
   "controls pretty printing of output")
