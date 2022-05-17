@@ -152,6 +152,10 @@
 			  (values null &optional))
 		add-string))
 (defun add-string (string buffer &key start end mode)
+  "Add the STRING from START till END to the BUFFER.
+Each character is filtered by the function MODE."
+  ;; FIXME: MODE may be #'identity.
+  ;; In such a case, pxp.adjustable-vector:replace may better.
   (let ((new-buffer-end (+ (buffer-ptr buffer)
 			   (- end start))))
     (pxp.adjustable-vector:overflow-protect (buffer buffer new-buffer-end)
