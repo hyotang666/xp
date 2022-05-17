@@ -28,6 +28,6 @@
 	    :pathname "stack"
 	    :depends-on ("adjustable-vector")
 	    :components ((:file "stack")))
-   (:file "xp-code" :depends-on ("buffer" "dispatch")))
+   (:file "xp-code" :depends-on ("buffer" "dispatch" "queue")))
   :in-order-to ((test-op (test-op "xp-test"))))
 
