@@ -42,6 +42,9 @@
 #+:franz-inc
 (defun output-position  (&optional (s *standard-output*)) (excl::charpos s))
 
+(define-compiler-macro charpos (buffer)
+  `(the pxp.adjustable-vector:index (slot-value ,buffer 'charpos)))
+
 (defclass buffer ()
   ((buffer
      :initform (pxp.adjustable-vector:new #.buffer-min-size :element-type 'character)
@@ -52,7 +55,7 @@
        	   "This is a vector of characters (eg a string) that builds up the"
        	   "line images that will be printed out."))
    (charpos
-     :initform nil :initarg :charpos :accessor charpos
+     :type pxp.adjustable-vector:index :accessor charpos
      :documentation
      #.(cl:format nil "~@{~A~^~%~}"
        	   "The output character position of the first character in the buffer"
@@ -93,7 +96,7 @@
 			  (values pxp.adjustable-vector:index &optional))
 		LP<-BP))
 (defun LP<-BP (buffer &optional (ptr (buffer-ptr buffer)))
-  (+ ptr (the pxp.adjustable-vector:index (charpos buffer))))
+  (+ ptr (charpos buffer)))
 
 (defun left-most-p (buffer)
   (zerop (LP<-BP buffer)))
@@ -107,7 +110,7 @@
 (declaim (ftype (function (buffer pxp.adjustable-vector:index)
 			  (values pxp.adjustable-vector:index &optional))
 		BP<-LP))
-(defun BP<-LP (buffer ptr) (- ptr (the pxp.adjustable-vector:index (charpos buffer))))
+(defun BP<-LP (buffer ptr) (- ptr (charpos buffer)))
 
 (defun initialize (buffer stream)
   (setf (charpos buffer) (or (output-position stream) 0)
@@ -116,7 +119,7 @@
   )
 
 (defun inc-ptr (buffer)
-  (incf (the pxp.adjustable-vector:index (charpos buffer))
+  (incf (charpos buffer)
 	(the pxp.adjustable-vector:index (buffer-ptr buffer))))
 
 ;;;; BUFFER-PTR
