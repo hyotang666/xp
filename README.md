@@ -9,13 +9,13 @@ This is a kludge, so may rename again in the future.
 NOTE: Not "Critical bug" is the bug about indentation and newlining.
 Such bugs do not break read/print identity.
 
-### SBCL
+### SBCL/2.2.4
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [x] Passing the test.
 
-### CCL
+### CCL/1.12.1
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
@@ -28,25 +28,25 @@ Evaluate `(named-readtables:in-readtable :fare-quasiquote)` then
 
 [fare-quasiquote]: https://github.com/fare/fare-quasiquote
 
-### CLISP
+### CLISP/2.49
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [x] Passing the test.
 
-### ECL
+### ECL/21.2.1
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [x] Passing the test.
 
-### Allegro
+### Allegro/10.1
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
 * [x] Passing the test.
 
-### CMUCL
+### CMUCL/21D
 * [x] Loadable.
 * [x] Testable.
 * [ ] Fixing critical bugs.
@@ -68,15 +68,11 @@ Evaluate `(named-readtables:in-readtable :fare-quasiquote)` then
 (funcall *) => "\"foo\""
 ```
 
-### ABCL
+### ABCL/1.9.0
 * [x] Loadable.
 * [x] Testable.
 * [x] Fixing critical bugs.
-* [ ] Passing the test.
-
-#### Issue
-ABCL prints package prefix even if the symbol is accessible.
-For details, see [issue](https://github.com/armedbear/abcl/issues/408).
+* [x] Passing the test.
 
 ### CLASP
 * [x] Loadable.
