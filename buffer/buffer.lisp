@@ -110,7 +110,7 @@
 (defun BP<-LP (buffer ptr) (- ptr (the pxp.adjustable-vector:index (charpos buffer))))
 
 (defun initialize (buffer stream)
-  (setf (charpos buffer) (cond ((output-position stream)) (T 0))
+  (setf (charpos buffer) (or (output-position stream) 0)
 	(buffer-offset buffer) (charpos buffer)
 	(buffer-ptr buffer) 0)
   )
