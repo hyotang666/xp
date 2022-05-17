@@ -48,6 +48,9 @@
 (define-compiler-macro buffer-ptr (buffer)
   `(the pxp.adjustable-vector:index (slot-value ,buffer 'buffer-ptr)))
 
+(define-compiler-macro buffer-offset (buffer)
+  `(the fixnum (slot-value ,buffer 'buffer-offset)))
+
 (defclass buffer ()
   ((buffer
      :initform (pxp.adjustable-vector:new #.buffer-min-size :element-type 'character)
@@ -69,7 +72,8 @@
      :documentation
      "The buffer position where the next character should be inserted in the string.")
    (buffer-offset
-     :initform nil :initarg :buffer-offset :accessor buffer-offset
+     :accessor buffer-offset
+     :type fixnum
      :documentation
      #.(cl:format nil "~@{~A~^~%~}"
        	   "Used in computing total lengths."
@@ -128,7 +132,7 @@
 
 (defun TP<-BP (buffer)
   (the pxp.adjustable-vector:index
-       (+ (buffer-ptr buffer) (the fixnum (buffer-offset buffer)))))
+       (+ (buffer-ptr buffer) (buffer-offset buffer))))
 
 ;We don't use adjustable vectors or any of that, because we seldom have
 ;to actually extend and non-adjustable vectors are a lot faster in
@@ -180,11 +184,10 @@
 			  (values pxp.adjustable-vector:index &optional))
 		BP<-TP))
 (defun BP<-TP (buffer ptr)
-  (- ptr (the fixnum (buffer-offset buffer))))
+  (- ptr (buffer-offset buffer)))
 
 (defun flush (buffer)
-  (incf (the fixnum (buffer-offset buffer))
-	(buffer-ptr buffer))
+  (setf (buffer-offset buffer) (the fixnum (+ (buffer-offset buffer) (buffer-ptr buffer))))
   (inc-ptr buffer)
   (setf (buffer-ptr buffer) 0))
 
@@ -225,5 +228,5 @@
     (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
     (set-prefix! (buffer buffer) prefix prefix-end)
     (setf (buffer-ptr buffer) (the pxp.adjustable-vector:index (+ (buffer-ptr buffer) change)))
-    (decf (the fixnum (buffer-offset buffer)) change))
+    (setf (buffer-offset buffer) (the fixnum (- (buffer-offset buffer) change))))
   nil)
