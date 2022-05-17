@@ -195,10 +195,6 @@
 (defmacro LP<-TP (xp ptr)
   `(pxp.buffer:LP<-BP ,xp (pxp.buffer:BP<-TP ,xp ,ptr)))
 
-;We don't use adjustable vectors or any of that, because we seldom have
-;to actually extend and non-adjustable vectors are a lot faster in
-;many Common Lisps.
-
 ;we shift the queue over rather than using a circular queue because
 ;that works out to be a lot faster in practice.  Note, short printout
 ;does not ever cause a shift, and even in long printout, the queue is

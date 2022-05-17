@@ -18,6 +18,14 @@
 
 (declaim (optimize speed))
 
+;;;; We don't use adjustable vectors or any of that, because we seldom have
+;;;; to actually extend and non-adjustable vectors are a lot faster in
+;;;; many Common Lisps.
+;;;;
+;;;; NOTE: By the way, is it actually?
+;;;; TODO: Bench it with modern lisp implementations.
+;;;; ISSUE: Should we split this as independent system?
+
 ;; Type
 
 (deftype index () '(mod #.array-total-size-limit))
