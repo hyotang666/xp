@@ -121,7 +121,8 @@
 	(buffer-ptr buffer) 0)
   )
 
-(defun inc-ptr (buffer) (incf (charpos buffer) (buffer-ptr buffer)))
+(defun inc-ptr (buffer)
+  (setf (charpos buffer) (the pxp.adjustable-vector:index (+ (charpos buffer) (buffer-ptr buffer)))))
 
 ;;;; BUFFER-PTR
 
@@ -223,6 +224,6 @@
 	  (buffer buffer (+ (buffer-ptr buffer) change))))
     (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
     (set-prefix! (buffer buffer) prefix prefix-end)
-    (incf (buffer-ptr buffer) change)
+    (setf (buffer-ptr buffer) (the pxp.adjustable-vector:index (+ (buffer-ptr buffer) change)))
     (decf (the fixnum (buffer-offset buffer)) change))
   nil)
