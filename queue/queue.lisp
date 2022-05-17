@@ -34,11 +34,12 @@
 ;;;; Use vector as table.
 ;;;; Each row has seven columns.
 
-(eval-when (:execute :load-toplevel :compile-toplevel) ;not used at run time.
-  (defvar queue-entry-size 7)) ; columns
+(eval-when (:execute :load-toplevel :compile-toplevel)
+  ;; not used at run time.
+  ;; In other words, used in read time, so eval-when is needed.
+  (defconstant queue-entry-size 7) ; columns
 
-(eval-when (:execute :load-toplevel :compile-toplevel) ;used at run time
-  (defvar queue-min-size #.(* 75. queue-entry-size))) ; minimum rows.
+  (defconstant queue-min-size #.(* 75. queue-entry-size))) ; minimum rows.
 
 (deftype Qindex () 'pxp.adjustable-vector:index)
 
