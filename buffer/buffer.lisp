@@ -45,6 +45,9 @@
 (define-compiler-macro charpos (buffer)
   `(the pxp.adjustable-vector:index (slot-value ,buffer 'charpos)))
 
+(define-compiler-macro buffer-ptr (buffer)
+  `(the pxp.adjustable-vector:index (slot-value ,buffer 'buffer-ptr)))
+
 (defclass buffer ()
   ((buffer
      :initform (pxp.adjustable-vector:new #.buffer-min-size :element-type 'character)
@@ -61,8 +64,8 @@
        	   "The output character position of the first character in the buffer"
        	   "(non-zero only if a partial line has been output)."))
    (buffer-ptr
-     :initform nil :initarg :buffer-ptr :accessor buffer-ptr
-     :type (or null pxp.adjustable-vector:index)
+     :accessor buffer-ptr
+     :type pxp.adjustable-vector:index
      :documentation
      "The buffer position where the next character should be inserted in the string.")
    (buffer-offset
@@ -84,7 +87,7 @@
 (defun show (buffer output)
   (fresh-line output)
   (write-string "buffer= " output)
-  (write buffer output :end (max (the pxp.adjustable-vector:index (buffer-ptr buffer)) 0)))
+  (write buffer output :end (max (buffer-ptr buffer) 0)))
 
 (defun show-detail (buffer output)
   (funcall (cl:formatter "charpos= ~D buffer-ptr= ~D buffer-offset= ~D")
@@ -118,23 +121,20 @@
 	(buffer-ptr buffer) 0)
   )
 
-(defun inc-ptr (buffer)
-  (incf (charpos buffer)
-	(the pxp.adjustable-vector:index (buffer-ptr buffer))))
+(defun inc-ptr (buffer) (incf (charpos buffer) (buffer-ptr buffer)))
 
 ;;;; BUFFER-PTR
 
 (defun TP<-BP (buffer)
   (the pxp.adjustable-vector:index
-       (+ (the pxp.adjustable-vector:index (buffer-ptr buffer))
-	  (the fixnum (buffer-offset buffer)))))
+       (+ (buffer-ptr buffer) (the fixnum (buffer-offset buffer)))))
 
 ;We don't use adjustable vectors or any of that, because we seldom have
 ;to actually extend and non-adjustable vectors are a lot faster in
 ;many Common Lisps.
 
 (defun add-char (char buffer)
-  (let ((new-buffer-end (1+ (the pxp.adjustable-vector:index (buffer-ptr buffer)))))
+  (let ((new-buffer-end (1+ (buffer-ptr buffer))))
     (pxp.adjustable-vector:overflow-protect (buffer buffer new-buffer-end)
       (setf (pxp.adjustable-vector:ref (buffer buffer) (buffer-ptr buffer)) char
 	    (buffer-ptr buffer) new-buffer-end))))
@@ -145,7 +145,7 @@
 			  (values null &optional))
 		add-string))
 (defun add-string (string buffer &key start end mode)
-  (let ((new-buffer-end (+ (the pxp.adjustable-vector:index (buffer-ptr buffer))
+  (let ((new-buffer-end (+ (buffer-ptr buffer)
 			   (- end start))))
     (pxp.adjustable-vector:overflow-protect (buffer buffer new-buffer-end)
       (loop :with buf = (buffer buffer)
@@ -159,7 +159,7 @@
 			  (values null &optional))
 		skip-to))
 (defun skip-to (length buffer)
-  (let ((end (+ (the pxp.adjustable-vector:index (buffer-ptr buffer)) length)))
+  (let ((end (+ (buffer-ptr buffer) length)))
     (pxp.adjustable-vector:overflow-protect (buffer buffer end)
       (pxp.adjustable-vector:fill (buffer buffer) #\space :start (buffer-ptr buffer) :end end)
       (setf (buffer-ptr buffer) end)))
@@ -170,7 +170,7 @@
 		prefix))
 (defun prefix (buffer &key rewind)
   (pxp.adjustable-vector:subseq (the vector (buffer buffer))
-				(- (the pxp.adjustable-vector:index (buffer-ptr buffer)) rewind)
+				(- (buffer-ptr buffer) rewind)
 				(buffer-ptr buffer)))
 
 ;;;; BUFFER-OFFSET
@@ -183,7 +183,7 @@
 
 (defun flush (buffer)
   (incf (the fixnum (buffer-offset buffer))
-	(the fixnum (buffer-ptr buffer)))
+	(buffer-ptr buffer))
   (inc-ptr buffer)
   (setf (buffer-ptr buffer) 0))
 
@@ -220,10 +220,9 @@
     (setf (charpos buffer) 0)
     (when (plusp change) ; almost never happens
       (pxp.adjustable-vector:overflow-protect
-	  (buffer buffer (+ (the pxp.adjustable-vector:index (buffer-ptr buffer))
-			    change))))
+	  (buffer buffer (+ (buffer-ptr buffer) change))))
     (shift! (buffer buffer) prefix-end out-point (buffer-ptr buffer))
     (set-prefix! (buffer buffer) prefix prefix-end)
-    (incf (the pxp.adjustable-vector:index (buffer-ptr buffer)) change)
+    (incf (buffer-ptr buffer) change)
     (decf (the fixnum (buffer-offset buffer)) change))
   nil)
