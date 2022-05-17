@@ -197,7 +197,7 @@ BLOCK NIL is implicitly achieved."
 	      (/ (the fixnum (- p (Qleft xp))) #.queue-entry-size)
 	      Qtype
 	      (if (member Qtype '(:newline :ind)) Qkind "")
-	      (pxp.buffer:BP<-TP xp Qpos)
+	      (pxp.buffer:buffer-position<-total-position xp Qpos)
 	      (Qdepth xp p)
 	      (if (not (member Qtype '(:newline :start-block))) ""
 		(and Qend

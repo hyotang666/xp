@@ -20,9 +20,9 @@
     #:add-string
     #:prefix
     #:shift
-    #:BP<-TP
-    #:LP<-BP
-    #:TP<-BP
+    #:buffer-position<-total-position
+    #:line-position<-buffer-position
+    #:total-position<-buffer-position
     ;;
     #:buffer-min-size
     #:buffer-entry-size
@@ -101,23 +101,23 @@
 
 (declaim (ftype (function (buffer &optional pxp.adjustable-vector:index)
 			  (values pxp.adjustable-vector:index &optional))
-		LP<-BP))
-(defun LP<-BP (buffer &optional (ptr (buffer-ptr buffer)))
+		line-position<-buffer-position))
+(defun line-position<-buffer-position (buffer &optional (ptr (buffer-ptr buffer)))
   (+ ptr (charpos buffer)))
 
 (defun left-most-p (buffer)
-  (zerop (LP<-BP buffer)))
+  (zerop (line-position<-buffer-position buffer)))
 
 (declaim (ftype (function (buffer &key (:max pxp.adjustable-vector:index))
 			  (values boolean &optional))
 		too-large-p))
 (defun too-large-p (buffer &key max)
-  (< max (LP<-BP buffer)))
+  (< max (line-position<-buffer-position buffer)))
 
 (declaim (ftype (function (buffer pxp.adjustable-vector:index)
 			  (values pxp.adjustable-vector:index &optional))
-		BP<-LP))
-(defun BP<-LP (buffer ptr) (- ptr (charpos buffer)))
+		buffer-position<-line-position))
+(defun buffer-position<-line-position (buffer ptr) (- ptr (charpos buffer)))
 
 (defun initialize (buffer stream)
   (setf (charpos buffer) (or (output-position stream) 0)
@@ -130,7 +130,7 @@
 
 ;;;; BUFFER-PTR
 
-(defun TP<-BP (buffer)
+(defun total-position<-buffer-position (buffer)
   (the pxp.adjustable-vector:index
        (+ (buffer-ptr buffer) (buffer-offset buffer))))
 
@@ -182,8 +182,8 @@
 
 (declaim (ftype (function (buffer pxp.adjustable-vector:index)
 			  (values pxp.adjustable-vector:index &optional))
-		BP<-TP))
-(defun BP<-TP (buffer ptr)
+		buffer-position<-total-position))
+(defun buffer-position<-total-position (buffer ptr)
   (- ptr (buffer-offset buffer)))
 
 (defun flush (buffer)

@@ -189,11 +189,11 @@
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
 
-;This does not tell you the line position you were at when the TP
+;This does not tell you the line position you were at when the total-position
 ;was set, unless there have been no newlines or indentation output
 ;between ptr and the current output point.
-(defmacro LP<-TP (xp ptr)
-  `(pxp.buffer:LP<-BP ,xp (pxp.buffer:BP<-TP ,xp ,ptr)))
+(defmacro line-position<-total-position (xp ptr)
+  `(pxp.buffer:line-position<-buffer-position ,xp (pxp.buffer:buffer-position<-total-position ,xp ,ptr)))
 
 ;we shift the queue over rather than using a circular queue because
 ;that works out to be a lot faster in practice.  Note, short printout
@@ -359,7 +359,7 @@
 		   (when (not (minusp (pxp.stack:prefix-stack-ptr ,xp)))
 		     (decf limit (pxp.stack:suffix-ptr ,xp))))
 		 (cond (Qend
-			(> (LP<-TP ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend))) limit))
+			(> (line-position<-total-position ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend))) limit))
 		       ((or force-newlines? (pxp.buffer:too-large-p xp :max limit)) T)
 		       (T (return nil))))) ; wait until later to decide.
 	     (misering? (xp)
@@ -373,13 +373,13 @@
 	      (case Qkind
 		(:block (+ (pxp.stack:initial-prefix-ptr xp) Qarg))
 		(T ; :current
-		  (+ (LP<-TP xp Qpos)
+		  (+ (line-position<-total-position xp Qpos)
 		     Qarg))))))
 	(:start-block
 	  (cond ((maybe-too-large xp ptr)
 		 (pxp.stack:push-prefix-stack xp)
 		 (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
-		 (pxp.stack:set-indentation-prefix xp (LP<-TP xp Qpos))
+		 (pxp.stack:set-indentation-prefix xp (line-position<-total-position xp Qpos))
 		 (let ((arg Qarg))
 		   (when (consp arg) (pxp.stack:set-prefix xp (cdr arg)))
 		   (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
@@ -411,7 +411,7 @@
 
 
 (declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
-;note this checks (> BUFFER-PTR LINEL) instead of (> (LP<-BP) LINEL)
+;note this checks (> BUFFER-PTR LINEL) instead of (> (line-position<-buffer-position) LINEL)
 ;this is important so that when things are longer than a line they
 ;end up getting printed in chunks of size LINEL.
 (defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
@@ -486,8 +486,8 @@
       (:line-relative (setq relative? T))
       (:section-relative (setq indented? T relative? T)))
     (let* ((current
-	     (if (not indented?) (pxp.buffer:LP<-BP xp)
-	       (- (pxp.buffer:TP<-BP xp) (pxp.stack:section-start xp))))
+	     (if (not indented?) (pxp.buffer:line-position<-buffer-position xp)
+	       (- (pxp.buffer:total-position<-buffer-position xp) (pxp.stack:section-start xp))))
 	   (new
 	     (if (zerop colinc)
 	       (if relative? (+ current colnum) (max colnum current))
@@ -513,10 +513,10 @@
 		pprint-newline+))
 (defun pprint-newline+ (kind xp)
   (pxp.queue:enqueue xp :newline kind
-		     :position (pxp.buffer:TP<-BP xp)
+		     :position (pxp.buffer:total-position<-buffer-position xp)
 		     :depth (pxp.stack:depth-in-blocks xp)
 		     :sync :depth)
-  (setf (pxp.stack:section-start xp) (pxp.buffer:TP<-BP xp))
+  (setf (pxp.stack:section-start xp) (pxp.buffer:total-position<-buffer-position xp))
   (when (and (member kind '(:fresh :unconditional)) (char-mode xp))
     (handle-char-mode xp #\newline))
   (when (member kind '(:fresh :unconditional :mandatory))
@@ -538,10 +538,10 @@
   (pxp.stack:push-block-stack xp)
   (pxp.queue:enqueue xp :start-block nil
 		     :arg (if on-each-line? (cons suffix-string prefix-string) suffix-string)
-		     :position (pxp.buffer:TP<-BP xp)
+		     :position (pxp.buffer:total-position<-buffer-position xp)
 		     :depth (pxp.stack:depth-in-blocks xp))
   (incf (pxp.stack:depth-in-blocks xp))	      ;must be after enqueue
-  (setf (pxp.stack:section-start xp) (pxp.buffer:TP<-BP xp))
+  (setf (pxp.stack:section-start xp) (pxp.buffer:total-position<-buffer-position xp))
   (values))
 
 
@@ -552,7 +552,7 @@
     (decf (pxp.stack:depth-in-blocks xp))
     (pxp.queue:enqueue xp :end-block nil
 		       :arg suffix
-		       :position (pxp.buffer:TP<-BP xp)
+		       :position (pxp.buffer:total-position<-buffer-position xp)
 		       :depth (pxp.stack:depth-in-blocks xp)
 		       :sync :offset)
     (pxp.stack:pop-block-stack xp))
@@ -564,7 +564,7 @@
 (defun pprint-indent+ (kind n xp)
   (pxp.queue:enqueue xp :ind kind
 		     :arg n
-		     :position (pxp.buffer:TP<-BP xp)
+		     :position (pxp.buffer:total-position<-buffer-position xp)
 		     :depth (pxp.stack:depth-in-blocks xp)))
 
 ;this can only be called last!
@@ -583,7 +583,7 @@
 (declaim (ftype (function (xp-structure pxp.queue:Qindex)
 			  (values &optional)) output-line))
 (defun output-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:BP<-TP xp (pxp.queue:Qpos xp Qentry)))
+  (let* ((out-point (pxp.buffer:buffer-position<-total-position xp (pxp.queue:Qpos xp Qentry)))
 	 (last-non-blank (pxp.buffer:last-non-blank xp :end out-point))
 	 (end (cond ((pxp.queue:fresh-newline-p xp Qentry) out-point)
 		    (last-non-blank (1+ last-non-blank))
@@ -606,7 +606,7 @@
 
 (declaim (ftype (function (xp-structure pxp.queue:Qindex) (values &optional)) setup-for-next-line))
 (defun setup-for-next-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:BP<-TP xp (pxp.queue:Qpos xp Qentry)))
+  (let* ((out-point (pxp.buffer:buffer-position<-total-position xp (pxp.queue:Qpos xp Qentry)))
 	 (prefix-end
 	   (cond ((pxp.queue:fresh-newline-p xp Qentry)
 		  (pxp.stack:non-blank-prefix-ptr xp))
