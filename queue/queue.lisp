@@ -109,6 +109,8 @@
 (defun Qemptyp (queue)
   (> (Qleft queue) (Qright queue)))
 
+;; FIXME: No reason to use macro.
+;; DEFUN with inline proclaimation is better.
 (defmacro Qnext (index) `(the (mod #.(- array-total-size-limit queue-entry-size))
 			      (+ ,index #.queue-entry-size)))
 
