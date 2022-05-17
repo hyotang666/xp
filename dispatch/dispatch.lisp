@@ -1,18 +1,15 @@
 (in-package :cl-user)
 (defpackage :pxp.dispatch (:use :cl)
-  (:shadow pprint-dispatch copy-pprint-dispatch *print-pprint-dispatch*
-	   set-pprint-dispatch pprint-dispatch)
+  (:shadow . #0=(pprint-dispatch copy-pprint-dispatch *print-pprint-dispatch*
+				 set-pprint-dispatch pprint-dispatch))
+  (:export . #0#)
   (:export
     #:*current-level*
-    #:get-printer
-    #:*print-pprint-dispatch*
-    #:non-pretty-print
-    #:set-pprint-dispatch
-    #:*IPD*
-    #:pprint-dispatch-entries
-    #:show
-    #:pprint-dispatch
-    #:copy-pprint-dispatch
+    #:*IPD* ; initial pprint dispatch.
+    #:get-printer ; reader
+    #:pprint-dispatch-entries ; reader
+    #:non-pretty-print ; printer
+    #:show ; entry printer
     #:initialize
     #:structure-type-p
     ))
