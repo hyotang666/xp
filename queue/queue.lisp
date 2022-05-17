@@ -102,9 +102,9 @@
    (Qright :initform nil :initarg :qright :accessor Qright
            :documentation "Point to the last entry enqueued.")))
 
-(defun initialize (xp)
-  (setf (Qleft xp) 0)
-  (setf (Qright xp) #.(- queue-entry-size)))
+(defun initialize (queue)
+  (setf (Qleft queue) 0)
+  (setf (Qright queue) #.(- queue-entry-size)))
 
 (defun Qemptyp (queue)
   (> (Qleft queue) (Qright queue)))
@@ -146,20 +146,20 @@ BLOCK NIL is implicitly achieved."
 	   `((setf (Qleft ,?queue) (Qnext (Qleft ,?queue))))))))
 
 (declaim (ftype (function (queue fixnum) (values null &optional)) sync-depth))
-(defun sync-depth (xp depth)
-  (for-each ((ptr Qend Qdepth Qtype) xp)
+(defun sync-depth (queue depth)
+  (for-each ((ptr Qend Qdepth Qtype) queue)
     (when (and (null Qend)
 	       (not (< Qdepth depth))
 	       (member Qtype '(:newline :start-block)))
-      (setf Qend (- (Qright xp) ptr)))))
+      (setf Qend (- (Qright queue) ptr)))))
 
 (declaim (ftype (function (queue fixnum) (values null &optional)) sync-offset))
-(defun sync-offset (xp depth)
-  (for-each ((ptr Qdepth Qtype Qoffset) xp)
+(defun sync-offset (queue depth)
+  (for-each ((ptr Qdepth Qtype Qoffset) queue)
     (when (and (= Qdepth depth)
 	       (eq Qtype :start-block)
 	       (null Qoffset))
-      (setf Qoffset (- (the (mod #.(- array-total-size-limit queue-entry-size)) (Qright xp)) ptr))
+      (setf Qoffset (- (the (mod #.(- array-total-size-limit queue-entry-size)) (Qright queue)) ptr))
       (return nil))))
 
 (declaim (ftype (function (queue Qtype (or null Qkind)
@@ -169,43 +169,43 @@ BLOCK NIL is implicitly achieved."
 				 (:sync (member nil :offset :depth)))
 			  (values &optional))
 		enqueue))
-(defun enqueue (xp type kind &key arg depth position sync)
-  (incf (the fixnum (Qright xp)) #.queue-entry-size)
-  (when (> (Qright xp) #.(- queue-min-size queue-entry-size))
-    (replace (queue xp) (queue xp) :start2 (Qleft xp) :end2 (Qright xp))
-    (setf (Qright xp) (the fixnum (- (Qright xp) (Qleft xp))))
-    (setf (Qleft xp) 0))
-  (pxp.adjustable-vector:overflow-protect (queue xp (Qright xp)
+(defun enqueue (queue type kind &key arg depth position sync)
+  (incf (the fixnum (Qright queue)) #.queue-entry-size)
+  (when (> (Qright queue) #.(- queue-min-size queue-entry-size))
+    (replace (queue queue) (queue queue) :start2 (Qleft queue) :end2 (Qright queue))
+    (setf (Qright queue) (the fixnum (- (Qright queue) (Qleft queue))))
+    (setf (Qleft queue) 0))
+  (pxp.adjustable-vector:overflow-protect (queue queue (Qright queue)
 						 :entry-size #.queue-entry-size
 						 :min-size #.queue-min-size))
-  (setf (Qtype xp (Qright xp)) type
-	(Qkind xp (Qright xp)) kind
-	(Qpos xp (Qright xp)) position
-	(Qdepth xp (Qright xp)) depth
-	(Qend xp (Qright xp)) nil
-	(Qoffset xp (Qright xp)) nil
-	(Qarg xp (Qright xp)) arg)
+  (setf (Qtype queue (Qright queue)) type
+	(Qkind queue (Qright queue)) kind
+	(Qpos queue (Qright queue)) position
+	(Qdepth queue (Qright queue)) depth
+	(Qend queue (Qright queue)) nil
+	(Qoffset queue (Qright queue)) nil
+	(Qarg queue (Qright queue)) arg)
   (case sync
-    (:depth (sync-depth xp depth))
-    (:offset (sync-offset xp depth)))
+    (:depth (sync-depth queue depth))
+    (:offset (sync-offset queue depth)))
   (values))
 
-(defun show (xp s)
-  (unless (Qemptyp xp)
+(defun show (queue s)
+  (unless (Qemptyp queue)
     (funcall (formatter "~&ptr type         kind           pos depth end offset arg") s)
-    (for-each ((p Qtype Qkind Qpos Qend Qoffset Qarg) xp)
+    (for-each ((p Qtype Qkind Qpos Qend Qoffset Qarg) queue)
       (funcall (formatter "~&~4A~13A~15A~4A~6A~4A~7A~A") s
-	      (/ (the fixnum (- p (Qleft xp))) #.queue-entry-size)
+	      (/ (the fixnum (- p (Qleft queue))) #.queue-entry-size)
 	      Qtype
 	      (if (member Qtype '(:newline :ind)) Qkind "")
-	      (pxp.buffer:buffer-position<-total-position xp Qpos)
-	      (Qdepth xp p)
+	      (pxp.buffer:buffer-position<-total-position queue Qpos)
+	      (Qdepth queue p)
 	      (if (not (member Qtype '(:newline :start-block))) ""
 		(and Qend
-		     (/ (the fixnum (- (+ p Qend) (Qleft xp))) #.queue-entry-size)))
+		     (/ (the fixnum (- (+ p Qend) (Qleft queue))) #.queue-entry-size)))
 	      (if (not (eq Qtype :start-block)) ""
 		(and Qoffset
-		     (/ (the fixnum (- (+ p Qoffset) (Qleft xp))) #.queue-entry-size)))
+		     (/ (the fixnum (- (+ p Qoffset) (Qleft queue))) #.queue-entry-size)))
 	      (if (not (member Qtype '(:ind :start-block :end-block))) ""
 		QarG)))))
 
