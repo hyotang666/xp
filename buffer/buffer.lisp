@@ -114,10 +114,12 @@
 (defun too-large-p (buffer &key max)
   (< max (line-position<-buffer-position buffer)))
 
+#| No one call this.
 (declaim (ftype (function (buffer pxp.adjustable-vector:index)
 			  (values pxp.adjustable-vector:index &optional))
 		buffer-position<-line-position))
 (defun buffer-position<-line-position (buffer ptr) (- ptr (charpos buffer)))
+|#
 
 (defun initialize (buffer stream)
   (setf (charpos buffer) (or (output-position stream) 0)
