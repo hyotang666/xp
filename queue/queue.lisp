@@ -21,7 +21,7 @@
     #:Qleft
     ;#:Qright
     ;;;
-    #:Qnext
+    ;#:Qnext
     #:enqueue
     #:for-each ; Iterator.
     #:flush
