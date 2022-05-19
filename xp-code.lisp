@@ -164,6 +164,13 @@
   (pushnew table *free-circularity-hash-tables*)
   (values))
 
+(defmacro with-circularity-hash-table (&body body)
+  `(let ((*circularity-hash-table* (when *print-circle*
+				     (get-circularity-hash-table))))
+     (unwind-protect (progn ,@body)
+       (when *circularity-hash-table*
+	 (free-circularity-hash-table *circularity-hash-table*)))))
+
 ;               ---- XP STRUCTURES, AND THE INTERNAL ALGORITHM ----
 
 (deftype char-mode ()
@@ -755,24 +762,22 @@
 
 (declaim (ftype (function (function stream &rest t) (values t &optional)) call-with-xp-stream))
 (defun call-with-xp-stream (fn stream &rest args)
-  (if (xp-structure-p stream) (apply fn stream args)
-      (let ((*abbreviation-happened* nil)
-	    (*locating-circularities* (if *print-circle* 0 nil))
-	    (*circularity-hash-table*
-	      (if *print-circle* (get-circularity-hash-table) nil))
-	    (*parents* (when (not *print-shared*) (list nil)))
-	    (*result* nil))
-	(xp-print fn (decode-stream-arg stream) args)
-	(if *circularity-hash-table*
-	    (free-circularity-hash-table *circularity-hash-table*))
-	(when *abbreviation-happened*
-	  (setq *last-abbreviated-printing*
-		(let ((list (copy-list args))) ; to avoid inner looping.
-		  (lambda (&optional (stream stream))
-		    (let ((*package* *package*))
-		      (apply #'call-with-xp-stream
-			     fn stream list))))))
-	*result*)))
+  (if (xp-structure-p stream)
+      (apply fn stream args)
+      (with-circularity-hash-table
+        (let ((*abbreviation-happened* nil)
+              (*locating-circularities* (if *print-circle* 0 nil))
+              (*parents* (when (not *print-shared*) (list nil)))
+              (*result* nil))
+          (xp-print fn (decode-stream-arg stream) args)
+          (when *abbreviation-happened*
+            (setq *last-abbreviated-printing*
+                  (let ((list (copy-list args))) ; to avoid inner looping.
+                    (lambda (&optional (stream stream))
+                      (let ((*package* *package*))
+                        (apply #'call-with-xp-stream
+                               fn stream list))))))
+          *result*))))
 
 
 (declaim (ftype (function (t stream) (values t &optional)) basic-write))
