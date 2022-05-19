@@ -415,21 +415,21 @@
 ;this is important so that when things are longer than a line they
 ;end up getting printed in chunks of size LINEL.
 (defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
-(when (> (pxp.buffer:buffer-ptr xp) (linel xp))
-(force-some-output xp))
-(pxp.buffer:add-char (if (char-mode xp)
-		 (handle-char-mode xp char)
-		 char)
-	       xp)
-(values))
+  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
+    (force-some-output xp))
+  (pxp.buffer:add-char (if (char-mode xp)
+			 (handle-char-mode xp char)
+			 char)
+		       xp)
+  (values))
 
 
 (declaim (ftype (function (character xp-structure) (values &optional))
 	write-char+))
 (defun write-char+ (char xp)
-(if (eql char #\newline) (pprint-newline+ :unconditional xp)
-(write-char++ char xp))
-(values))
+  (if (eql char #\newline) (pprint-newline+ :unconditional xp)
+    (write-char++ char xp))
+  (values))
 
 
 (declaim (ftype (function (string xp-structure
@@ -439,11 +439,11 @@
 	write-string+++))
 ; never forces output; therefore safe to call from within output-line.
 (defun write-string+++ (string xp start end)
-(pxp.buffer:add-string string xp :start start :end end
-		 :mode (if (char-mode xp)
-			 (lambda (char) (handle-char-mode xp char))
-			 #'identity))
-(values))
+  (pxp.buffer:add-string string xp :start start :end end
+			 :mode (if (char-mode xp)
+				 (lambda (char) (handle-char-mode xp char))
+				 #'identity))
+  (values))
 
 (declaim (ftype (function (string xp-structure
 			  (mod #.array-total-size-limit)
@@ -451,9 +451,9 @@
 		  (values &optional))
 	write-string++))
 (defun write-string++ (string xp start end)
-(when (> (pxp.buffer:buffer-ptr xp) (linel xp))
-(force-some-output xp))
-(write-string+++ string xp start end))
+  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
+    (force-some-output xp))
+  (write-string+++ string xp start end))
 
 
 (declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
@@ -461,13 +461,13 @@
 		  (values null &optional))
 	write-string+))
 (defun write-string+ (string xp start end)
-(loop :for s = start :then (1+ sub-end)
-:for next-newline = (position #\newline string :test #'char= :start s :end end)
-:for sub-end = (or next-newline end)
-:do (write-string++ string xp s sub-end)
-    (when (null next-newline)
-      (loop-finish))
-    (pprint-newline+ :unconditional xp)))
+  (loop :for s = start :then (1+ sub-end)
+	:for next-newline = (position #\newline string :test #'char= :start s :end end)
+	:for sub-end = (or next-newline end)
+	:do (write-string++ string xp s sub-end)
+	    (when (null next-newline)
+	      (loop-finish))
+	    (pprint-newline+ :unconditional xp)))
 
 (deftype tab-kind ()
 '(member :section :line-relative :section-relative :line))
