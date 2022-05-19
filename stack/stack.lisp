@@ -71,7 +71,9 @@
      :accessor depth-in-blocks
      :documentation "Number of logical blocks at QRIGHT that are started but not ended.")
    (block-stack
-     :initform (pxp.adjustable-vector:new #.block-stack-min-size) :initarg :block-stack
+     :initform (pxp.adjustable-vector:new #.block-stack-min-size
+					  :element-type 'pxp.adjustable-vector:index)
+     :initarg :block-stack
      :accessor block-stack
      :documentation
      #.(format nil "~@{~A~^~%~}"
@@ -98,6 +100,19 @@
            "Stores the suffixes that have to be printed to close of the current
            open blocks.  For convenient in popping, the whole suffix
            is stored in reverse order.")))
+
+;;;; ENTRY
+
+#++sketch
+(defstruct (stack-entry (:type vector) (:conc-name nil))
+  (prefix-ptr :type fixnum)
+  (suffix-ptr :type fixnum)
+  (non-blank-prefix-ptr :type fixnum)
+  (initial-prefix-ptr :type prefix-stack-entry)
+  (section-start-line :type prefix-stack-entry)
+  (section-start :type pxp.adjustable-vector:index))
+
+;;;; ACCESSORS
 
 (defmacro prefix-ptr (stack)
   `(the fixnum (pxp.adjustable-vector:ref (prefix-stack ,stack) (prefix-stack-ptr ,stack))))
