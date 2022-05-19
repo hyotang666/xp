@@ -179,17 +179,21 @@
 		pop-prefix-stack))
 (defun push-prefix-stack (stack)
   (let ((old-prefix 0) (old-suffix 0) (old-non-blank 0))
+    ;; Keeping current pointers to point.
     (when (not (minusp (prefix-stack-ptr stack)))
       (setq old-prefix (prefix-ptr stack)
 	    old-suffix (suffix-ptr stack)
 	    old-non-blank (non-blank-prefix-ptr stack)))
+    ;; Pushing the entry forward.
     (incf (the fixnum (prefix-stack-ptr stack)) #.prefix-stack-entry-size)
+    ;; Checking overflow.
     (pxp.adjustable-vector:overflow-protect (prefix-stack stack (prefix-stack-ptr stack)
 							  :entry-size #.prefix-stack-entry-size
-							  :min-size #.prefix-stack-min-size)
-      (setf (prefix-ptr stack) old-prefix
-            (suffix-ptr stack) old-suffix
-            (non-blank-prefix-ptr stack) old-non-blank)))
+							  :min-size #.prefix-stack-min-size))
+    ;; Set current pointers values.
+    (setf (prefix-ptr stack) old-prefix
+	  (suffix-ptr stack) old-suffix
+	  (non-blank-prefix-ptr stack) old-non-blank))
   (values))
 
 (defun pop-prefix-stack (stack)
