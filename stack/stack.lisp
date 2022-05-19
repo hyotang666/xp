@@ -37,13 +37,12 @@
 
 (declaim (optimize speed))
 
-(eval-when (:execute :load-toplevel :compile-toplevel) ; used at compile time.
-  (defvar block-stack-entry-size 1)
-  (defvar prefix-stack-entry-size 5))
-
-(eval-when (:execute :load-toplevel :compile-toplevel) ;not used at run time.
-  (defvar block-stack-min-size #.(* 35. block-stack-entry-size))
-  (defvar prefix-stack-min-size #.(* 30. prefix-stack-entry-size)))
+(eval-when (:execute :load-toplevel :compile-toplevel)
+  ;; Used in read-time, so this eval-when is needed.
+  (defconstant block-stack-entry-size 1)
+  (defconstant prefix-stack-entry-size 5)
+  (defconstant block-stack-min-size (* 35. block-stack-entry-size))
+  (defconstant prefix-stack-min-size (* 30. prefix-stack-entry-size)))
 
 ;;;; Prefix-stack entries.
 (deftype pointer () '(mod #.array-total-size-limit))
