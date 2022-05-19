@@ -83,6 +83,23 @@
 (defmacro Qoffset (queue index) `(the Qoffset (pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 5))))
 (defmacro Qarg    (queue index) `(pxp.adjustable-vector:ref (queue ,queue) (+ (the (mod #.(- array-total-size-limit queue-entry-size)) ,index) 6)))
 
+(defmacro with-Qentry-members ((ptr &rest column+) queue &body body)
+  (let ((?queue (gensym "QUEUE"))
+	(?ptr (gensym "POINTER")))
+    `(let ((,?queue ,queue)
+	   (,?ptr ,ptr))
+       (declare (Qindex ,?ptr))
+       (symbol-macrolet ,(mapcar (lambda (column)
+				   (let ((accessor (uiop:find-symbol* (symbol-name column) :pxp.queue)))
+				     ;; Trivial-syntax-check
+				     #-(or abcl)
+				     ;; abcl fail when ACCESSOR is (member Qpos Qdepth Qarg).
+				     (assert (subtypep accessor 'Qentry) ()
+		                       "~S must be Qentry." accessor)
+				     `(,column (,accessor ,?queue ,?ptr))))
+				 column+)
+         ,@body))))
+
 (define-compiler-macro queue (queue)
   `(the (pxp.adjustable-vector:adjustable-vector Qentry) (slot-value ,queue 'queue)))
 
@@ -134,15 +151,7 @@ BLOCK NIL is implicitly achieved."
 	   `(not (< ,?ptr (Qright ,?queue))))
 	 ,@(when consume `((initialize ,?queue))))
        (declare (fixnum ,?ptr))
-       (symbol-macrolet ,(mapcar (lambda (column)
-				   (let ((accessor (uiop:find-symbol* (symbol-name column) :pxp.queue)))
-				     ;; Trivial-syntax-check
-				     #-(or abcl)
-				     ;; abcl fail when ACCESSOR is (member Qpos Qdepth Qarg).
-				     (assert (subtypep accessor 'Qentry) ()
-		                       "~S must be Qentry." accessor)
-				     `(,column (,accessor ,?queue ,?ptr))))
-				 column+)
+       (with-Qentry-members (,?ptr ,@column+) ,?queue
          ,@body)
        ,@(when consume
 	   `((setf (Qleft ,?queue) (Qnext (Qleft ,?queue))))))))
@@ -180,13 +189,14 @@ BLOCK NIL is implicitly achieved."
   (pxp.adjustable-vector:overflow-protect (queue queue (Qright queue)
 						 :entry-size #.queue-entry-size
 						 :min-size #.queue-min-size))
-  (setf (Qtype queue (Qright queue)) type
-	(Qkind queue (Qright queue)) kind
-	(Qpos queue (Qright queue)) position
-	(Qdepth queue (Qright queue)) depth
-	(Qend queue (Qright queue)) nil
-	(Qoffset queue (Qright queue)) nil
-	(Qarg queue (Qright queue)) arg)
+  (with-Qentry-members ((Qright queue) Qtype Qkind Qpos Qdepth Qend Qoffset Qarg) queue
+    (setf Qtype type
+          Qkind kind
+          Qpos position
+          Qdepth depth
+          Qend nil
+          Qoffset nil
+          Qarg arg))
   (case sync
     (:depth (sync-depth queue depth))
     (:offset (sync-offset queue depth)))
