@@ -3,7 +3,6 @@
   (:shadow block)
   (:export
     #:stack
-    #:initialize
     ;; Printer
     #:show-detail
     #:show-ptr
@@ -114,11 +113,11 @@
 (defmacro section-start (stack)
   `(pxp.adjustable-vector:ref (block-stack ,stack) (block-stack-ptr ,stack)))
 
-(defun initialize (stack)
-  (setf (depth-in-blocks stack) 0)
-  (setf (block-stack-ptr stack) 0)
-  (setf (section-start stack) 0)
-  (setf (prefix-stack-ptr stack) #.(- prefix-stack-entry-size)))
+(defmethod shared-initialize :after ((o stack) slot-names &key &allow-other-keys)
+  (setf (depth-in-blocks o) 0
+        (block-stack-ptr o) 0
+        (section-start o) 0
+        (prefix-stack-ptr o) #.(- prefix-stack-entry-size)))
 
 (declaim (ftype (function (stack) (values &optional))
 		push-block-stack))

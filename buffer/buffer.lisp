@@ -10,7 +10,6 @@
     #:show-detail
     #:write
     ;;
-    #:initialize
     #:skip-to
     #:flush
     #:last-non-blank
@@ -121,11 +120,10 @@
 (defun buffer-position<-line-position (buffer ptr) (- ptr (charpos buffer)))
 |#
 
-(defun initialize (buffer stream)
-  (setf (charpos buffer) (or (output-position stream) 0)
-	(buffer-offset buffer) (charpos buffer)
-	(buffer-ptr buffer) 0)
-  )
+(defmethod shared-initialize :after ((o buffer) slot-names &key stream)
+  (setf (charpos o) (or (output-position stream) 0)
+	(buffer-offset o) (charpos o)
+	(buffer-ptr o) 0))
 
 ;;;; BUFFER-PTR
 

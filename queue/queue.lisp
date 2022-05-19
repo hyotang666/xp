@@ -2,7 +2,6 @@
 (defpackage :pxp.queue (:use :cl)
   (:export
     #:queue ; type name.
-    #:initialize
     #:show
     ;;; Type
     #:Qindex
@@ -118,6 +117,9 @@
           :documentation "Point to the next entry to dequeue.")
    (Qright :initform nil :initarg :qright :accessor Qright
            :documentation "Point to the last entry enqueued.")))
+
+(defmethod shared-initialize :after ((o queue) slot-names &key &allow-other-keys)
+  (initialize o))
 
 (defun initialize (queue)
   (setf (Qleft queue) 0)

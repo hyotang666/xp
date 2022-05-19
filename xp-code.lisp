@@ -243,9 +243,10 @@
 
 (declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
 (defun get-pretty-print-stream (stream)
-  (initialize-xp (or (pop *free-xps*)
-		     (make-instance 'xp-structure))
-		 stream))
+  (let ((pooled (pop *free-xps*)))
+    (if pooled
+      (reinitialize-instance pooled :stream stream)
+      (make-instance 'xp-structure :stream stream))))
 
 ;If you call this, the xp-stream gets efficiently recycled.
 
@@ -262,25 +263,17 @@
      (unwind-protect (progn ,@body)
        (free-pretty-print-stream ,var))))
 
-;This is called to initialize things when you start pretty printing.
+;;;; This is called to initialize things when you start pretty printing.
 
-
-(declaim (ftype (function (xp-structure stream)
-			  (values xp-structure &optional))
-		initialize-xp))
-(defun initialize-xp (xp stream)
-  (setf (base-stream xp) stream)
-  (setf (linel xp) (max 0 (cond (*print-right-margin*)
-				((output-width stream))
-				(T *default-right-margin*))))
-  (setf (line-limit xp) *print-lines*)
-  (setf (line-no xp) 1)
-  (setf (char-mode xp) nil)
-  (setf (char-mode-counter xp) 0)
-  (pxp.queue:initialize xp)
-  (pxp.stack:initialize xp)
-  (pxp.buffer:initialize xp stream)
-  xp)
+(defmethod shared-initialize :after ((o xp-structure) slot-names &key stream)
+  (setf (base-stream o) stream
+        (linel o) (max 0 (cond (*print-right-margin*)
+                                ((output-width stream))
+                                (T *default-right-margin*)))
+        (line-limit o) *print-lines*
+        (line-no o) 1
+        (char-mode o) nil
+        (char-mode-counter o) 0))
 
 ;The char-mode stuff is a bit tricky.
 ;one can be in one of the following modes:
