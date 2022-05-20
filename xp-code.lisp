@@ -511,7 +511,6 @@
   (setf (pxp.stack:section-start xp) (pxp.buffer:total-position<-buffer-position xp))
   (values))
 
-
 (declaim (ftype (function (xp-structure (or null string)) (values &optional)) end-block))
 (defun end-block (xp suffix)
   (unless (eq *abbreviation-happened* '*print-lines*)
@@ -525,8 +524,16 @@
     (pxp.stack:pop-block-stack xp))
   (values))
 
-;this can only be called last!
+(defmacro with-block ((xp prefix-string on-each-line? suffix-string) &body body)
+  (let ((?xp (gensym "XP"))
+	(?suffix-string (gensym "SUFFIX-STRING")))
+    `(let ((,?xp ,xp)
+	   (,?suffix-string ,suffix-string))
+       (start-block ,?xp ,prefix-string ,on-each-line? ,?suffix-string)
+       (unwind-protect (progn ,@body)
+	 (end-block ,?xp ,?suffix-string)))))
 
+;this can only be called last!
 
 (declaim (ftype (function (xp-structure) (values &optional)) flush))
 (defun flush (xp)
@@ -691,16 +698,14 @@
 			   (pxp.dispatch:non-pretty-print object s))))
 		   (write-string+ stuff xp 0 (length stuff)))))))))
 
-
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
   (with-pooled-xp (xp :stream stream)
     (let ((pxp.dispatch:*current-level* 0)
           (result nil))
       (catch 'line-limit-abbreviation-exit
-        (start-block xp nil nil nil)
-        (setq result (apply fn xp args))
-        (end-block xp nil))
+        (with-block (xp nil nil nil)
+          (setq result (apply fn xp args))))
       (when (and *locating-circularities*
                  (zerop *locating-circularities*)	;No circularities.
                  (= (line-no xp) 1)	     	;Didn't suppress line.
@@ -1037,14 +1042,12 @@
 	     `((not-first-p (plusp *current-length*)))))
      (unless (check-block-abbreviation ,var ,args ,circle-check?)
        (block logical-block
-	 (start-block ,var ,prefix ,per-line? ,suffix)
-	 (unwind-protect
+         (with-block (,var ,prefix ,per-line? ,suffix)
 	   (macrolet ((pprint-pop () `(pprint-pop+ ,',args ,',var))
 		      (pprint-exit-if-list-exhausted ()
 			`(when (null ,',args)
 			   (return-from logical-block nil))))
-	     ,@ body)
-	   (end-block ,var ,suffix))))))
+	     ,@body))))))
 
 (defun pprint-newline (kind &optional (stream *standard-output*))
   (setq stream (decode-stream-arg stream))
