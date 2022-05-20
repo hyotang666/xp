@@ -147,29 +147,11 @@
 ;If a duplicate is found, a positive integer tag is assigned.
 ;After the first time the object is printed out, the tag is negated.
 
-(declaim (type list *free-circularity-hash-tables*))
-(defvar *free-circularity-hash-tables* nil
-  "free list of circularity hash tables") ; never bound
-
-(declaim (ftype (function () (values hash-table &optional)) get-circularity-hash-table))
-(defun get-circularity-hash-table ()
-  (or (pop *free-circularity-hash-tables*)
-      (make-hash-table :test 'eq)))
-
-;If you call this, then the table gets efficiently recycled.
-
-(declaim (ftype (function (hash-table) (values &optional)) free-circularity-hash-table))
-(defun free-circularity-hash-table (table)
-  (clrhash table)
-  (pushnew table *free-circularity-hash-tables*)
-  (values))
-
-(defmacro with-circularity-hash-table (&body body)
-  `(let ((*circularity-hash-table* (when *print-circle*
-				     (get-circularity-hash-table))))
-     (unwind-protect (progn ,@body)
-       (when *circularity-hash-table*
-	 (free-circularity-hash-table *circularity-hash-table*)))))
+(pxp.pool:defpool circularity-hash-table
+  :constructor (lambda (&rest args)
+		 (and *print-circle*
+		      (apply #'make-hash-table :test #'eq args)))
+  :destructor (lambda (table) (and table (clrhash table))))
 
 ;               ---- XP STRUCTURES, AND THE INTERNAL ALGORITHM ----
 
@@ -243,32 +225,12 @@
 ;primitives for it.  There is a tiny probability here that two different
 ;processes could end up trying to use the same xp-stream)
 
-
-(declaim (type list *free-xps*))
-(defvar *free-xps* nil "free list of XP stream objects") ; never bound
-
-
-(declaim (ftype (function (stream) (values xp-structure &optional)) get-pretty-print-stream))
-(defun get-pretty-print-stream (stream)
-  (let ((pooled (pop *free-xps*)))
-    (if pooled
-      (reinitialize-instance pooled :stream stream)
-      (make-instance 'xp-structure :stream stream))))
-
-;If you call this, the xp-stream gets efficiently recycled.
-
-
-(declaim (ftype (function (xp-structure) (values list &optional))
-		free-pretty-print-stream))
-(defun free-pretty-print-stream (xp)
-  ;; MEMO: Should base-stream be closed?
-  (setf (base-stream xp) nil)
-  (pushnew xp *free-xps*))
-
-(defmacro with-xp ((var <stream>) &body body)
-  `(let ((,var (get-pretty-print-stream ,<stream>)))
-     (unwind-protect (progn ,@body)
-       (free-pretty-print-stream ,var))))
+(pxp.pool:defpool xp
+  :constructor (lambda (&rest args)
+		 (apply #'make-instance 'xp-structure args))
+  :resetter (lambda (instance &rest args)
+	      (apply #'reinitialize-instance instance args))
+  :destructor (lambda (instance) (setf (base-stream instance) nil)))
 
 ;;;; This is called to initialize things when you start pretty printing.
 
@@ -734,7 +696,7 @@
 
 (declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
 (defun do-xp-printing (fn stream args)
-  (with-xp (xp stream)
+  (with-pooled-xp (xp :stream stream)
     (let ((pxp.dispatch:*current-level* 0)
           (result nil))
       (catch 'line-limit-abbreviation-exit
@@ -764,7 +726,7 @@
 (defun call-with-xp-stream (fn stream &rest args)
   (if (xp-structure-p stream)
       (apply fn stream args)
-      (with-circularity-hash-table
+      (with-pooled-circularity-hash-table (*circularity-hash-table*)
         (let ((*abbreviation-happened* nil)
               (*locating-circularities* (if *print-circle* 0 nil))
               (*parents* (when (not *print-shared*) (list nil)))
