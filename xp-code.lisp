@@ -61,17 +61,16 @@
 		defstruct)
        ,@(reexport :pxp.dispatch copy-pprint-dispatch pprint-dispatch
 		   set-pprint-dispatch *print-pprint-dispatch*)
+       ,@(reexport :pxp.stream *print-right-margin* *print-miser-width* *print-lines*
+		   *print-shared* #:*last-abbreviated-printing*)
        (:shadow formatter pprint-fill pprint-linear pprint-tabular
 		pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
 		pprint-newline pprint-indent pprint-tab
-		*print-right-margin* *print-miser-width* *print-lines*)
+		)
        (:export formatter pprint-fill pprint-linear pprint-tabular
 		pprint-logical-block pprint-pop pprint-exit-if-list-exhausted
 		pprint-newline pprint-indent pprint-tab
-		*print-right-margin* #:*default-right-margin*
-		*print-miser-width* *print-lines*
-		#:*last-abbreviated-printing*
-		*print-shared*)))
+		#:*default-right-margin*)))
 
 (in-package :pxp)
 
@@ -100,131 +99,23 @@
 
 ;must do the following in common lisps not supporting *print-shared*
 
-(defvar *print-shared* nil)
-
-(defvar *print-right-margin* nil
-  "+#/nil the right margin for pretty printing")
-(defvar *print-miser-width* 40.
-  "+#/nil miser format starts when there is less than this width left")
-(defvar *print-lines* nil
-  "+#/nil truncates printing after # lines")
-(defvar *default-right-margin* 70.
-  "controls default line length; must be a non-negative integer")
-(defvar *last-abbreviated-printing*
-	#'(lambda (&optional stream) (declare (ignore stream)) nil)
-  "funcalling this redoes the last xp printing that was abbreviated.")
-
 (defvar *current-length* 0
   "current position in logical block.")
-(defvar *abbreviation-happened* nil
-  "t if current thing being printed has been abbreviated.")
-(defvar *result* nil "used to pass back a value")
 
-;default (bad) definitions for the non-portable functions
-
-#-(or :franz-inc)(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
-
-
-;Definitions for FRANZ Common Lisp. (Only verified for the version 1.3
-;(5/31/87) currently running on suns at MIT.)
-
-#+:franz-inc(eval-when (:execute :load-toplevel :compile-toplevel)
-(defun output-width     (&optional (s *standard-output*)) (declare (ignore s)) nil))
-
-
-(declaim (type (or null integer) *locating-circularities*))
-(defvar *locating-circularities* nil
-  "Integer if making a first pass over things to identify circularities.
-   Integer used as counter for #n= syntax.")
-(declaim (type list *parents*))
-(defvar *parents* nil "used when *print-shared* is nil")
-
-(declaim (type (or null hash-table) *circularity-hash-table*))
-(defvar *circularity-hash-table* nil
-  "Contains hash table used for locating circularities, or a stack.")
 ;When an entry is first made it is zero.
 ;If a duplicate is found, a positive integer tag is assigned.
 ;After the first time the object is printed out, the tag is negated.
 
-(pxp.pool:defpool circularity-hash-table
-  :constructor (lambda (&rest args)
-		 (and *print-circle*
-		      (apply #'make-hash-table :test #'eq args)))
-  :destructor (lambda (table) (and table (clrhash table))))
-
 ;               ---- XP STRUCTURES, AND THE INTERNAL ALGORITHM ----
-
-(deftype char-mode ()
-  '(member nil :up :down :cap0 :cap1 :capw))
-
-(defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream
-			 pxp.buffer:buffer pxp.stack:stack pxp.queue:queue)
-  ((base-stream :initform nil :initarg :base-stream
-		:type (or null stream) :accessor base-stream
-		:documentation "The stream io eventually goes to.")
-   (linel :accessor linel
-          :documentation "The line length to use for formatting." )
-   (line-limit :initform nil :initarg :line-limit :accessor line-limit
-	       :documentation "If non-NIL the max number of lines to print.")
-   (line-no :accessor line-no
-            :documentation "number of next line to be printed.")
-   (char-mode :type char-mode :initform nil :accessor char-mode)
-   (char-mode-counter
-     :accessor char-mode-counter
-     :documentation "depth of nesting of ~(...~)")))
-
-(defmethod shared-initialize :after ((o xp-structure) slot-names &key stream)
-  (setf (base-stream o) stream
-        (linel o) (max 0 (cond (*print-right-margin*)
-                                ((output-width stream))
-                                (T *default-right-margin*)))
-        (line-limit o) *print-lines*
-        (line-no o) 1
-        (char-mode o) nil
-        (char-mode-counter o) 0))
-
-(defun xp-structure-p (arg)
-  (typep arg 'xp-structure))
 
 ;This does not tell you the line position you were at when the total-position
 ;was set, unless there have been no newlines or indentation output
 ;between ptr and the current output point.
-(defmacro line-position<-total-position (xp ptr)
-  `(pxp.buffer:line-position<-buffer-position ,xp (pxp.buffer:buffer-position<-total-position ,xp ,ptr)))
-
 ;we shift the queue over rather than using a circular queue because
 ;that works out to be a lot faster in practice.  Note, short printout
 ;does not ever cause a shift, and even in long printout, the queue is
 ;shifted left for free every time it happens to empty out.
 
-
-(declaim (type boolean *describe-xp-streams-fully*))
-(defvar *describe-xp-streams-fully* nil "Set to T to see more info.")
-
-(defmethod print-object ((xp xp-structure) s)
-  (print-unreadable-object (xp s :type t :identity nil)
-    (cl:format s "stream ")
-    (if (not (base-stream xp))
-        (cl:format s "not currently in use")
-        (cl:format s "outputting to ~S" (base-stream xp)))
-    (when (base-stream xp)
-      (pxp.buffer:show xp s)
-      (when (not *describe-xp-streams-fully*) (cl:princ " ..." s))
-      (when *describe-xp-streams-fully*
-        (cl:format s "~&   pos   _123456789_123456789_123456789_123456789")
-        (cl:format s "~&depth-in-blocks= ~D linel= ~D line-no= ~D line-limit= ~D"
-                     (pxp.stack:depth-in-blocks xp) (linel xp) (line-no xp) (line-limit xp))
-        (when (or (char-mode xp) (not (zerop (char-mode-counter xp))))
-          (cl:format s "~&char-mode= ~S char-mode-counter= ~D"
-                       (char-mode xp) (char-mode-counter xp)))
-	(pxp.stack:show-section-start xp s)
-        (cl:format s "~&linel= ~D" (linel xp))
-	(pxp.buffer:show-detail xp s)
-	(pxp.stack:show-detail xp s)
-	(pxp.queue:show xp s)
-	(pxp.stack:show-ptr xp s))))
-  (values))
 
 ;This maintains a list of XP structures.  We save them
 ;so that we don't have to create new ones all of the time.
@@ -233,13 +124,6 @@
 ;(Note should really be doing some locking here, but CL does not have the
 ;primitives for it.  There is a tiny probability here that two different
 ;processes could end up trying to use the same xp-stream)
-
-(pxp.pool:defpool xp
-  :constructor (lambda (&rest args)
-		 (apply #'make-instance 'xp-structure args))
-  :resetter (lambda (instance &rest args)
-	      (apply #'reinitialize-instance instance args))
-  :destructor (lambda (instance) (setf (base-stream instance) nil)))
 
 ;The char-mode stuff is a bit tricky.
 ;one can be in one of the following modes:
@@ -254,37 +138,8 @@
 ;nested modes never have any effect.  You can just ignore them.
 
 
-(declaim (ftype (function (xp-structure char-mode) (values &optional))
-		push-char-mode))
-(defun push-char-mode (xp new-mode)
-  (when (zerop (char-mode-counter xp))
-    (setf (char-mode xp) new-mode))
-  (incf (char-mode-counter xp))
-  (values))
-
-
-(declaim (ftype (function (xp-structure) (values &optional)) pop-char-mode))
-(defun pop-char-mode (xp)
-  (decf (char-mode-counter xp))
-  (when (zerop (char-mode-counter xp))
-    (setf (char-mode xp) nil))
-  (values))
 
 ;Assumes is only called when char-mode is non-nil
-
-(declaim (ftype (function (xp-structure character)
-			  (values character &optional))
-		handle-char-mode))
-(defun handle-char-mode (xp char)
-  (ecase (char-mode xp)
-    (:CAP0 (cond ((not (alphanumericp char)) char)
-		 (T (setf (char-mode xp) :DOWN) (char-upcase char))))
-    (:CAP1 (cond ((not (alphanumericp char)) char)
-		 (T (setf (char-mode xp) :CAPW) (char-upcase char))))
-    (:CAPW (cond ((alphanumericp char) (char-downcase char))
-		 (T (setf (char-mode xp) :CAP1) char)))
-    (:UP (char-upcase char))
-    (:DOWN (char-downcase char))))
 
 ;All characters output are passed through the handler above.  However, it must
 ;be noted that on-each-line prefixes are only processed in the context of the
@@ -302,287 +157,23 @@
 ;;; You better not call it this way except as the last act of outputting.
 
 
-(declaim (ftype (function (xp-structure boolean boolean)
-			  (values &optional))
-		attempt-to-output))
-(defun attempt-to-output (xp force-newlines? flush-out?)
-  (macrolet ((maybe-too-large (xp Qentry)
-              `(let ((limit (linel ,xp)))
-		 (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
-		   (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
-		   (when (not (minusp (pxp.stack:prefix-stack-ptr ,xp)))
-		     (decf limit (pxp.stack:suffix-ptr ,xp))))
-		 (cond (Qend
-			(> (line-position<-total-position ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend))) limit))
-		       ((or force-newlines? (pxp.buffer:too-large-p xp :max limit)) T)
-		       (T (return nil))))) ; wait until later to decide.
-	     (misering? (xp)
-               `(and *print-miser-width*
-		     (<= (- (linel ,xp) (pxp.stack:initial-prefix-ptr ,xp)) *print-miser-width*))))
-    (pxp.queue:for-each ((ptr Qtype Qkind Qarg Qpos Qoffset Qend) xp :consume t)
-      (case Qtype
-	(:ind
-	  (unless (misering? xp)
-	    (pxp.stack:set-indentation-prefix xp
-	      (case Qkind
-		(:block (+ (pxp.stack:initial-prefix-ptr xp) Qarg))
-		(T ; :current
-		  (+ (line-position<-total-position xp Qpos)
-		     Qarg))))))
-	(:start-block
-	  (cond ((maybe-too-large xp ptr)
-		 (pxp.stack:push-prefix-stack xp)
-		 (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
-		 (pxp.stack:set-indentation-prefix xp (line-position<-total-position xp Qpos))
-		 (let ((arg Qarg))
-		   (when (consp arg) (pxp.stack:set-prefix xp (cdr arg)))
-		   (setf (pxp.stack:initial-prefix-ptr xp) (pxp.stack:prefix-ptr xp))
-		   (cond ((not (listp arg)) (pxp.stack:set-suffix xp arg))
-			 ((car arg) (pxp.stack:set-suffix xp (car arg)))))
-		 (setf (pxp.stack:section-start-line xp) (line-no xp)))
-		(T (incf (pxp.queue:Qleft xp) Qoffset))))
-	(:end-block (pxp.stack:pop-prefix-stack xp) )
-	(T ; :newline
-	  (when (case Qkind
-		  (:fresh (not (pxp.buffer:left-most-p xp)))
-		  (:miser (misering? xp))
-		  (:fill (or (misering? xp)
-			     (> (line-no xp) (pxp.stack:section-start-line xp))
-			     (maybe-too-large xp ptr)))
-		  (T T)) ;(:linear :unconditional :mandatory)
-	    (output-line xp ptr)
-	    (setup-for-next-line xp ptr)))))
-    (when flush-out? (flush xp))
-    (values)))
-
-
-(declaim (ftype (function (xp-structure) (values &optional)) force-some-output))
-(defun force-some-output (xp)
-  (attempt-to-output xp nil nil)
-  (when (> (pxp.buffer:buffer-ptr xp) (linel xp)) ;only if printing off end of line
-    (attempt-to-output xp T T))
-  (values))
-
 ;This handles the basic outputting of characters.  note + suffix means that
 ;the stream is known to be an XP stream, all inputs are mandatory, and no
 ;error checking has to be done.
 ;;;; +++ suffix functions.
 
-(declaim (ftype (function (string xp-structure
-			  (mod #.array-total-size-limit)
-			  (mod #.array-total-size-limit))
-		  (values &optional))
-	write-string+++))
-; never forces output; therefore safe to call from within output-line.
-(defun write-string+++ (string xp start end)
-  (pxp.buffer:add-string string xp :start start :end end
-			 :mode (if (char-mode xp)
-				   (lambda (char) (handle-char-mode xp char))
-				   #'identity))
-  (values))
-
 ;;;; ++ suffix functions.
 ;;  Suffix ++ additionally means that the output is guaranteed not to contain a newline char.
-
-(declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
-;note this checks (> BUFFER-PTR LINEL) instead of (> (line-position<-buffer-position) LINEL)
-;this is important so that when things are longer than a line they
-;end up getting printed in chunks of size LINEL.
-(defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
-  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (pxp.buffer:add-char (if (char-mode xp)
-			   (handle-char-mode xp char)
-			   char)
-		       xp)
-  (values))
-
-(declaim (ftype (function (string xp-structure
-			  (mod #.array-total-size-limit)
-			  (mod #.array-total-size-limit))
-		  (values &optional))
-	write-string++))
-(defun write-string++ (string xp start end)
-  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (write-string+++ string xp start end))
-
 ;;;; + suffix functions.
-
-(declaim (ftype (function (character xp-structure) (values &optional))
-	write-char+))
-(defun write-char+ (char xp)
-  (if (eql char #\newline)
-      (pprint-newline+ :unconditional xp)
-      (write-char++ char xp))
-  (values))
-
-(declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
-			  (mod #.array-total-size-limit))
-		  (values null &optional))
-	write-string+))
-(defun write-string+ (string xp start end)
-  (loop :for s = start :then (1+ sub-end)
-	:for next-newline = (position #\newline string :test #'char= :start s :end end)
-	:for sub-end = (or next-newline end)
-	:do (write-string++ string xp s sub-end)
-	    (when (null next-newline)
-	      (loop-finish))
-	    (pprint-newline+ :unconditional xp)))
-
-(deftype tab-kind ()
-'(member :section :line-relative :section-relative :line))
-
-(declaim (ftype (function (tab-kind
-		   (integer 0 *)
-		   (integer 0 *)
-		   xp-structure)
-		  (values &optional))
-	pprint-tab+))
-(defun pprint-tab+ (kind colnum colinc xp)
-  (let ((indented? nil) (relative? nil))
-    (case kind
-      (:section (setq indented? T))
-      (:line-relative (setq relative? T))
-      (:section-relative (setq indented? T relative? T)))
-    (let* ((current
-	     (if (not indented?)
-	         (pxp.buffer:line-position<-buffer-position xp)
-	         (- (pxp.buffer:total-position<-buffer-position xp) (pxp.stack:section-start xp))))
-	   (new
-	     (if (zerop colinc)
-	         (if relative? (+ current colnum) (max colnum current))
-	         (cond (relative?
-			 (* colinc (floor (+ current colnum colinc -1) colinc)))
-		       ((> colnum current) colnum)
-		       (T (+ colnum
-			     (* colinc
-				(floor (+ current (- colnum) colinc) colinc)))))))
-	   (length (- new current)))
-      (when (plusp length)
-	(when (char-mode xp) (handle-char-mode xp #\space))
-	(pxp.buffer:skip-to length xp))))
-  (values))
 
 ;note following is smallest number >= x that is a multiple of colinc
 ;  (* colinc (floor (+ x (1- colinc)) colinc))
 
-(declaim (ftype (function ((or pxp.queue:newline-kind (member :fresh :unconditional))
-			   xp-structure)
-			  (values &optional))
-		pprint-newline+))
-(defun pprint-newline+ (kind xp)
-  (pxp.queue:enqueue xp :newline kind
-		     :position (pxp.buffer:total-position<-buffer-position xp)
-		     :depth (pxp.stack:depth-in-blocks xp)
-		     :sync :depth)
-  (setf (pxp.stack:section-start xp) (pxp.buffer:total-position<-buffer-position xp))
-  (when (and (member kind '(:fresh :unconditional)) (char-mode xp))
-    (handle-char-mode xp #\newline))
-  (when (member kind '(:fresh :unconditional :mandatory))
-    (attempt-to-output xp T nil))
-  (values))
-
-(declaim (ftype (function (pxp.queue:indent-kind fixnum xp-structure) (values &optional))
-		pprint-indent+))
-(defun pprint-indent+ (kind n xp)
-  (pxp.queue:enqueue xp :ind kind
-		     :arg n
-		     :position (pxp.buffer:total-position<-buffer-position xp)
-		     :depth (pxp.stack:depth-in-blocks xp)))
-
-(declaim (ftype (function (xp-structure (or null string)
-					boolean
-					(or null string))
-			  (values &optional))
-		start-block))
-(defun start-block (xp prefix-string on-each-line? suffix-string
-		       &aux (prefix-string prefix-string)) ; Rebinding to muffle sbcl compiler.
-  (when prefix-string (write-string++ prefix-string xp 0 (length prefix-string)))
-  (when (and (char-mode xp) on-each-line?)
-    (setq prefix-string
-	  (pxp.buffer:prefix xp :rewind (length prefix-string))))
-  (pxp.stack:push-block-stack xp)
-  (pxp.queue:enqueue xp :start-block nil
-		     :arg (if on-each-line? (cons suffix-string prefix-string) suffix-string)
-		     :position (pxp.buffer:total-position<-buffer-position xp)
-		     :depth (pxp.stack:depth-in-blocks xp))
-  (incf (pxp.stack:depth-in-blocks xp))	      ;must be after enqueue
-  (setf (pxp.stack:section-start xp) (pxp.buffer:total-position<-buffer-position xp))
-  (values))
-
-(declaim (ftype (function (xp-structure (or null string)) (values &optional)) end-block))
-(defun end-block (xp suffix)
-  (unless (eq *abbreviation-happened* '*print-lines*)
-    (when suffix (write-string+ suffix xp 0 (length suffix)))
-    (decf (pxp.stack:depth-in-blocks xp))
-    (pxp.queue:enqueue xp :end-block nil
-		       :arg suffix
-		       :position (pxp.buffer:total-position<-buffer-position xp)
-		       :depth (pxp.stack:depth-in-blocks xp)
-		       :sync :offset)
-    (pxp.stack:pop-block-stack xp))
-  (values))
-
-(defmacro with-block ((xp prefix-string on-each-line? suffix-string) &body body)
-  (let ((?xp (gensym "XP"))
-	(?suffix-string (gensym "SUFFIX-STRING")))
-    `(let ((,?xp ,xp)
-	   (,?suffix-string ,suffix-string))
-       (start-block ,?xp ,prefix-string ,on-each-line? ,?suffix-string)
-       (unwind-protect (progn ,@body)
-	 (end-block ,?xp ,?suffix-string)))))
-
 ;this can only be called last!
-
-(declaim (ftype (function (xp-structure) (values &optional)) flush))
-(defun flush (xp)
-  (unless *locating-circularities*
-    (pxp.buffer:write xp (base-stream xp)))
-  (pxp.buffer:flush xp)
-  (values))
 
 ;This prints out a line of stuff.
 
 
-(declaim (ftype (function (xp-structure pxp.queue:Qindex)
-			  (values &optional)) output-line))
-(defun output-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:buffer-position<-total-position xp (pxp.queue:Qpos xp Qentry)))
-	 (last-non-blank (pxp.buffer:last-non-blank xp :end out-point))
-	 (end (cond ((pxp.queue:fresh-newline-p xp Qentry) out-point)
-		    (last-non-blank (1+ last-non-blank))
-		    (T 0)))
-	 (line-limit-exit (and (line-limit xp) (not (> (line-limit xp) (line-no xp))))))
-    (when line-limit-exit
-      (setf (pxp.buffer:buffer-ptr xp) end)          ;truncate pending output.
-      (write-string+++ " .." xp 0 3)
-      (pxp.stack:set-reverse-suffix xp)
-      (write-string+++ (pxp.stack:suffix xp) xp 0 (pxp.stack:suffix-ptr xp))
-      (pxp.queue:flush xp)
-      (setq *abbreviation-happened* '*print-lines*)
-      (throw 'line-limit-abbreviation-exit T))
-    (incf (line-no xp))
-    (unless *locating-circularities*
-      (pxp.buffer:write xp (base-stream xp) :end end)
-      (cl:terpri (base-stream xp))))
-  (values))
-
-
-(declaim (ftype (function (xp-structure pxp.queue:Qindex) (values &optional)) setup-for-next-line))
-(defun setup-for-next-line (xp Qentry)
-  (let* ((out-point (pxp.buffer:buffer-position<-total-position xp (pxp.queue:Qpos xp Qentry)))
-	 (prefix-end
-	   (cond ((pxp.queue:fresh-newline-p xp Qentry)
-		  (pxp.stack:non-blank-prefix-ptr xp))
-		 (T (pxp.stack:prefix-ptr xp)))))
-    (pxp.buffer:shift xp
-		      :prefix (pxp.stack:prefix xp)
-		      :prefix-end prefix-end
-		      :out-point out-point)
-    (when (not (pxp.queue:fresh-newline-p xp Qentry))
-      (setf (pxp.stack:section-start-line xp) (line-no xp))))
-  (values))
 
 ;		   ---- BASIC INTERFACE FUNCTIONS ----
 
@@ -615,67 +206,11 @@
 ;;; given implementation of CL is going to have the reader automatically share.
 
 
-(declaim (ftype (function (xp-structure t boolean)
-			  (values (member nil :subsequent :first) &optional))
-		circularity-process))
-(defun circularity-process (xp object interior-cdr?)
-  "Determine circularity process type.
-  Returns
-  NIL - Printing should just continue on.
-  :FIRST - Object is first occurrence of a DUPLICATE.
-  :SUBSEQUENT - Second or later occurrence."
-  (unless (or (numberp object)
-	      (characterp object)
-	      (and (symbolp object)	;Reader takes care of sharing.
-		   (or (null *print-gensym*) (symbol-package object))))
-    (let ((id (gethash object *circularity-hash-table*)))
-      (if *locating-circularities*
-	  (cond ((null id)	;never seen before
-		 (when *parents* (push object *parents*))
-		 (setf (gethash object *circularity-hash-table*) 0)
-		 nil)
-		((zerop id) ;possible second occurrence
-		 (cond ((or (null *parents*) (member object *parents*))
-			(setf (gethash object *circularity-hash-table*)
-			      (incf *locating-circularities*))
-			:subsequent)
-		       (T nil)))
-		(T :subsequent));third or later occurrence
-	  (cond ((or (null id)	;never seen before (note ~@* etc. conses)
-		     (zerop id));no duplicates
-		 nil)
-		((plusp id)
-		 (cond (interior-cdr?
-			(decf pxp.dispatch:*current-level*)
-			(write-string++ ". #" xp 0 3))
-		       (T (write-char++ #\# xp)))
-		 (print-fixnum xp id)
-		 (write-char++ #\= xp)
-		 (setf (gethash object *circularity-hash-table*) (- id))
-		 :first)
-		(T (if interior-cdr?
-		       (write-string++ ". #" xp 0 3)
-		       (write-char++ #\# xp))
-		   (print-fixnum xp (- id))
-		   (write-char++ #\# xp)
-		   :subsequent))))))
-
-(deftype stream-designator ()
-  '(or boolean stream))
-
-(declaim (ftype (function (stream-designator) (values stream &optional)) decode-stream-arg))
-(defun decode-stream-arg (stream)
-  "Decode stream-designator to apropreate stream."
-  (etypecase stream
-    ((eql t) *terminal-io*)
-    (null *standard-output*)
-    (stream stream)))
-
 (defun write+ (object xp)
-  (let ((*parents* *parents*))
-    (unless (and *circularity-hash-table*
-		(eq (circularity-process xp object nil) :subsequent))
-      (when (and *circularity-hash-table* (consp object))
+  (let ((pxp.stream:*parents* pxp.stream:*parents*))
+    (unless (and pxp.stream:*circularity-hash-table*
+		(eq (pxp.stream:circularity-process xp object nil) :subsequent))
+      (when (and pxp.stream:*circularity-hash-table* (consp object))
 	;;avoid possible double check in handle-logical-block.
 	(setq object (cons (car object) (cdr object))))
       (let ((printer (if *print-pretty*
@@ -683,7 +218,7 @@
 			 nil))
 	    type)
 	(cond (printer (funcall printer xp object))
-	      ((maybe-print-fast xp object))
+	      ((pxp.stream:maybe-print-fast xp object))
 	      ((and *print-pretty*
 		    (symbolp (setq type (type-of object)))
 		    (setq printer (get type 'structure-printer))
@@ -696,59 +231,14 @@
 	      (T (let ((stuff
 			 (with-output-to-string (s)
 			   (pxp.dispatch:non-pretty-print object s))))
-		   (write-string+ stuff xp 0 (length stuff)))))))))
+		   (pxp.stream:write-string+ stuff xp 0 (length stuff)))))))))
 
-(declaim (ftype (function (function stream list) (values t &optional)) do-xp-printing))
-(defun do-xp-printing (fn stream args)
-  (with-pooled-xp (xp :stream stream)
-    (let ((pxp.dispatch:*current-level* 0)
-          (result nil))
-      (catch 'line-limit-abbreviation-exit
-        (with-block (xp nil nil nil)
-          (setq result (apply fn xp args))))
-      (when (and *locating-circularities*
-                 (zerop *locating-circularities*)	;No circularities.
-                 (= (line-no xp) 1)	     	;Didn't suppress line.
-                 (zerop (pxp.buffer:buffer-offset xp)))	;Didn't suppress partial line.
-        (setq *locating-circularities* nil))	;print what you have got.
-      (when (catch 'line-limit-abbreviation-exit
-              (attempt-to-output xp nil T) nil)
-        (attempt-to-output xp T T))
-      result)))
-
-(defun xp-print (fn stream args)
-  (setq *result* (do-xp-printing fn stream args))
-  (when *locating-circularities*
-    (setq *locating-circularities* nil)
-    (setq *abbreviation-happened* nil)
-    (setq *parents* nil)
-    (setq *result* (do-xp-printing fn stream args))))
-
-
-(declaim (ftype (function (function stream &rest t) (values t &optional)) call-with-xp-stream))
-(defun call-with-xp-stream (fn stream &rest args)
-  (if (xp-structure-p stream)
-      (apply fn stream args)
-      (with-pooled-circularity-hash-table (*circularity-hash-table*)
-        (let ((*abbreviation-happened* nil)
-              (*locating-circularities* (if *print-circle* 0 nil))
-              (*parents* (when (not *print-shared*) (list nil)))
-              (*result* nil))
-          (xp-print fn (decode-stream-arg stream) args)
-          (when *abbreviation-happened*
-            (setq *last-abbreviated-printing*
-                  (let ((list (copy-list args))) ; to avoid inner looping.
-                    (lambda (&optional (stream stream))
-                      (let ((*package* *package*))
-                        (apply #'call-with-xp-stream
-                               fn stream list))))))
-          *result*))))
 
 
 (declaim (ftype (function (t stream) (values t &optional)) basic-write))
 (defun basic-write (object stream)
-  (cond ((xp-structure-p stream) (write+ object stream))
-	(*print-pretty* (call-with-xp-stream
+  (cond ((pxp.stream:xp-structure-p stream) (write+ object stream))
+	(*print-pretty* (pxp.stream:call-with-xp-stream
 			  #'(lambda (s o) (write+ o s)) stream object))
 	(T (cl:write object :stream stream))))
 
@@ -766,13 +256,13 @@
 		     ((:array *print-array*) *print-array*)
 		     ((:pprint-dispatch pxp.dispatch:*print-pprint-dispatch*)
 		      pxp.dispatch:*print-pprint-dispatch*)
-		     ((:right-margin *print-right-margin*)
-		      *print-right-margin*)
-		     ((:lines *print-lines*) *print-lines*)
-		     ((:miser-width *print-miser-width*)
-		      *print-miser-width*))
-  (setq stream (decode-stream-arg stream))
-  (cond ((or (xp-structure-p stream) *print-pretty*)
+		     ((:right-margin pxp.stream:*print-right-margin*)
+		      pxp.stream:*print-right-margin*)
+		     ((:lines pxp.stream:*print-lines*) pxp.stream:*print-lines*)
+		     ((:miser-width pxp.stream:*print-miser-width*)
+		      pxp.stream:*print-miser-width*))
+  (setq stream (pxp.stream:decode-stream-arg stream))
+  (cond ((or (pxp.stream:xp-structure-p stream) *print-pretty*)
 	 (basic-write object stream))
 	#+(or ccl clisp ecl)
 	((and (null *print-pretty*)
@@ -792,65 +282,13 @@
 ;standard printer all the time.  There would be diminishing returns from making
 ;this work with more things, but might be worth it.
 
-(defun maybe-print-fast (xp object)
-  (cond ((stringp object)
-	 (cond ((null *print-escape*) (write-string+ object xp 0 (length object)) T)
-	       ((every #'(lambda (c) (not (or (char= c #\") (char= c #\\))))
-		       object)
-		(write-char++ #\" xp)
-		(write-string+ object xp 0 (length object))
-		(write-char++ #\" xp) T)))
-	((typep object 'fixnum)
-	 (when (and (null *print-radix*) (= *print-base* 10.))
-	   (when (minusp object)
-	     (write-char++ #\- xp)
-	     (setq object (- object)))
-	   (print-fixnum xp object) T))
-	((symbolp object)
-	 (let ((s (symbol-name object))
-	       (is-key (keywordp object))
-	       (mode (case *print-case*
-		       (:downcase :down)
-		       (:capitalize :cap1)
-		       (T nil)))) ;note no-escapes-needed requires all caps
-	   (cond ((and (or is-key (eq (symbol-package object) *package*)
-			   (eq object (find-symbol s)))
-		       (no-escapes-needed s))
-		  (when (and is-key *print-escape*)
-		    (write-char++ #\: xp))
-		  (when mode (push-char-mode xp mode))
-		  (write-string++ s xp 0 (length s))
-		  (when mode (pop-char-mode xp)) T))))))
-
-
-(declaim (ftype (function (xp-structure fixnum) (values &optional)) print-fixnum))
-(defun print-fixnum (xp fixnum)
-  (multiple-value-bind (digits d)
-      (truncate fixnum 10)
-    (unless (zerop digits)
-      (print-fixnum xp digits))
-    (write-char++ (code-char (+ #.(char-code #\0) d)) xp)))
 
 ;just wants to succeed fast in a lot of common cases.
 ;assumes no funny readtable junk for the characters shown.
 
 
-(declaim (ftype (function (string) (values boolean &optional)) no-escapes-needed))
-(defun no-escapes-needed (s)
-  (let ((n (length s)))
-    (and (not (zerop n))
-	 (let ((c (schar s 0)))
-	   (or (and (alpha-char-p c) (upper-case-p c)) (find c "*<>")))
-	 (loop :for i :upfrom 1 :below n
-	       :for c = (schar s i)
-	       :unless (not (or (digit-char-p c)
-				(and (alpha-char-p c) (upper-case-p c))
-				(find c "*+<>-")))
-	         :return nil
-	       :finally (return t)))))
-
 (defun print (object &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (terpri stream)
   (let ((*print-escape* T))
     (basic-write object stream))
@@ -858,19 +296,19 @@
   object)
 
 (defun prin1 (object &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (let ((*print-escape* T))
     (basic-write object stream))
   object)
 
 (defun princ (object &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (let ((*print-escape* nil))
     (basic-write object stream))
   object)
 
 (defun pprint (object &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (terpri stream)
   (let ((*print-escape* T) (*print-pretty* T))
     (basic-write object stream))
@@ -894,9 +332,9 @@
 ;via an XP stream (See formatter).
 
 
-(defmethod trivial-gray-streams:stream-line-column ((output xp-structure)) nil)
-(defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
-  (write-char+ char output)
+(defmethod trivial-gray-streams:stream-line-column ((output pxp.stream:xp-structure)) nil)
+(defmethod trivial-gray-streams:stream-write-char ((output pxp.stream:xp-structure) char)
+  (pxp.stream:write-char+ char output)
   char)
 
 (locally
@@ -904,18 +342,18 @@
   #+sbcl (declare (sb-ext:muffle-conditions style-warning))
 (defun write-string (string &optional (stream *standard-output*)
 		     &key (start 0) (end (length string)))
-  (setq stream (decode-stream-arg stream))
-  (if (xp-structure-p stream)
-      (write-string+ string stream start end)
+  (setq stream (pxp.stream:decode-stream-arg stream))
+  (if (pxp.stream:xp-structure-p stream)
+      (pxp.stream:write-string+ string stream start end)
       (cl:write-string string stream :start start :end end))
   string)
 
 (defun write-line (string &optional (stream *standard-output*)
 		   &key (start 0) (end (length string)))
-  (setq stream (decode-stream-arg stream))
-  (if (xp-structure-p stream)
-      (progn (write-string+ string stream start end)
-	     (pprint-newline+ :unconditional stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
+  (if (pxp.stream:xp-structure-p stream)
+      (progn (pxp.stream:write-string+ string stream start end)
+	     (pxp.stream:pprint-newline+ :unconditional stream))
       (cl:write-line string stream :start start :end end))
   string) )
 
@@ -923,11 +361,11 @@
 ;stuff, in order to find out the right info to return as the result.
 
 (defun fresh-line (&optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (cond ((xp-structure-p stream)
-	 (attempt-to-output stream T T) ;ok because we want newline
+  (setq stream (pxp.stream:decode-stream-arg stream))
+  (cond ((pxp.stream:xp-structure-p stream)
+	 (pxp.stream:attempt-to-output stream T T) ;ok because we want newline
 	 (when (not (pxp.buffer:left-most-p stream))
-	   (pprint-newline+ :fresh stream)
+	   (pxp.stream:pprint-newline+ :fresh stream)
 	   T))
 	(T (and (cl:fresh-line stream) t))))
 
@@ -936,17 +374,17 @@
 ;out.  This is so that things will be in a consistent state if
 ;output continues to the stream later.
 
-(defmethod trivial-gray-streams:stream-finish-output ((output xp-structure))
-  (attempt-to-output output T T)
+(defmethod trivial-gray-streams:stream-finish-output ((output pxp.stream:xp-structure))
+  (pxp.stream:attempt-to-output output T T)
   nil)
 
-(defmethod trivial-gray-streams:stream-force-output ((output xp-structure))
-  (attempt-to-output output T T)
+(defmethod trivial-gray-streams:stream-force-output ((output pxp.stream:xp-structure))
+  (pxp.stream:attempt-to-output output T T)
   nil)
 
-(defmethod trivial-gray-streams:stream-clear-output ((output xp-structure))
-  (let ((*locating-circularities* 0)) ;hack to prevent visible output
-    (attempt-to-output output T T))
+(defmethod trivial-gray-streams:stream-clear-output ((output pxp.stream:xp-structure))
+  (let ((pxp.stream:*locating-circularities* 0)) ;hack to prevent visible output
+    (pxp.stream:attempt-to-output output T T))
   nil)
 
 ;note we are assuming that if a structure is defined using xp::defstruct,
@@ -1019,7 +457,7 @@
     (warn "prefix ~S and per-line-prefix ~S cannot both be specified ~
            in PPRINT-LOGICAL-BLOCK" prefix per-line-prefix)
     (setq per-line-prefix nil))
-  `(call-with-xp-stream
+  `(pxp.stream:call-with-xp-stream
      #'(lambda (,stream-symbol)
 	 (let ((+l ,list)
 	       (+p ,(or prefix per-line-prefix ""))
@@ -1027,7 +465,7 @@
 	   (pprint-logical-block+
 	     (,stream-symbol +l +p +s ,(not (null per-line-prefix)) T nil)
 	     ,@ body nil)))
-     (decode-stream-arg ,stream-symbol)))
+     (pxp.stream:decode-stream-arg ,stream-symbol)))
 
 ;Assumes var and args must be variables.  Other arguments must be literals or variables.
 
@@ -1037,12 +475,12 @@
      (setq circle-check? 'not-first-p))
   `(let ((pxp.dispatch:*current-level* (1+ pxp.dispatch:*current-level*))
 	 (*current-length* -1)
-	 (*parents* *parents*)
+	 (pxp.stream:*parents* pxp.stream:*parents*)
 	 ,@(when (and circle-check? atsign?)
 	     `((not-first-p (plusp *current-length*)))))
      (unless (check-block-abbreviation ,var ,args ,circle-check?)
        (block logical-block
-         (with-block (,var ,prefix ,per-line? ,suffix)
+         (pxp.stream:with-block (,var ,prefix ,per-line? ,suffix)
 	   (macrolet ((pprint-pop () `(pprint-pop+ ,',args ,',var))
 		      (pprint-exit-if-list-exhausted ()
 			`(when (null ,',args)
@@ -1050,24 +488,24 @@
 	     ,@body))))))
 
 (defun pprint-newline (kind &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (check-type kind pxp.queue:newline-kind)
-  (when (xp-structure-p stream)
-    (pprint-newline+ kind stream))
+  (when (pxp.stream:xp-structure-p stream)
+    (pxp.stream:pprint-newline+ kind stream))
   nil)
 
 (defun pprint-indent (relative-to n &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
   (check-type relative-to pxp.queue:indent-kind)
-  (when (xp-structure-p stream)
-    (pprint-indent+ relative-to n stream))
+  (when (pxp.stream:xp-structure-p stream)
+    (pxp.stream:pprint-indent+ relative-to n stream))
   nil)
 
 (defun pprint-tab (kind colnum colinc &optional (stream *standard-output*))
-  (setq stream (decode-stream-arg stream))
-  (check-type kind tab-kind)
-  (when (xp-structure-p stream)
-    (pprint-tab+ kind colnum colinc stream))
+  (setq stream (pxp.stream:decode-stream-arg stream))
+  (check-type kind pxp.stream:tab-kind)
+  (when (pxp.stream:xp-structure-p stream)
+    (pxp.stream:pprint-tab+ kind colnum colinc stream))
   nil)
 
 ;                        ---- COMPILED FORMAT ----
@@ -1227,7 +665,7 @@
 	     (setq string-or-fn (process-format-string string-or-fn nil)))
 	   (cond ((not (stringp string-or-fn))
 		  (apply string-or-fn stream args))
-		 ((xp-structure-p stream)
+		 ((pxp.stream:xp-structure-p stream)
 		  (apply #'using-format stream string-or-fn args))
 		 (T (apply #'cl:format stream string-or-fn args)))
 	   nil)))
@@ -1304,20 +742,20 @@
        (pop ,args)))
 
 
-(declaim (ftype (function (t xp-structure) (values boolean &optional)) pprint-pop-check+))
+(declaim (ftype (function (t pxp.stream:xp-structure) (values boolean &optional)) pprint-pop-check+))
 (defun pprint-pop-check+ (args xp)
   (incf *current-length*)
   (cond ((not (listp args))  ;must be first so supersedes length abbrev
-	 (write-string++ ". " xp 0 2)
+	 (pxp.stream:write-string++ ". " xp 0 2)
 	 (write+ args xp)
 	 T)
 	((and *print-length* ;must supersede circle check
 	      (not (< *current-length* *print-length*)))
-	 (write-string++ "..." xp 0 3)
-	 (setq *abbreviation-happened* T)
+	 (pxp.stream:write-string++ "..." xp 0 3)
+	 (setq pxp.stream:*abbreviation-happened* T)
 	 T)
-	((and *circularity-hash-table* (not (zerop *current-length*)))
-	 (case (circularity-process xp args T)
+	((and pxp.stream:*circularity-hash-table* (not (zerop *current-length*)))
+	 (case (pxp.stream:circularity-process xp args T)
 	   (:first ;; note must inhibit rechecking of circularity for args.
 		   (write+ (cons (car args) (cdr args)) xp) T)
 	   (:subsequent T)
@@ -1329,17 +767,17 @@
        (pop ,args)))
 
 
-(declaim (ftype (function (t xp-structure) (values boolean &optional)) pprint-pop-check+top))
+(declaim (ftype (function (t pxp.stream:xp-structure) (values boolean &optional)) pprint-pop-check+top))
 (defun pprint-pop-check+top (args xp)
   (incf *current-length*)
   (cond ((not (listp args))  ;must be first so supersedes length abbrev
-	 (write-string++ ". " xp 0 2)
+	 (pxp.stream:write-string++ ". " xp 0 2)
 	 (write+ args xp)
 	 T)
 	((and *print-length* ;must supersede circle check
 	      (not (< *current-length* *print-length*)))
-	 (write-string++ "..." xp 0 3)
-	 (setq *abbreviation-happened* T)
+	 (pxp.stream:write-string++ "..." xp 0 3)
+	 (setq pxp.stream:*abbreviation-happened* T)
 	 T)))
 
 
@@ -1353,12 +791,12 @@
 		:for sub-end = (or next-newline end)
 		:when (< s sub-end)
 		:collect (if (= s (1- sub-end))
-			   `(write-char++ ,(aref *string* s) xp)
-			   `(write-string++ ,(subseq *string* s sub-end) xp
+			   `(pxp.stream:write-char++ ,(aref *string* s) xp)
+			   `(pxp.stream:write-string++ ,(subseq *string* s sub-end) xp
 					    ,0 ,(- sub-end s)))
 		:when (null next-newline)
 		  :do (loop-finish)
-		:collect `(pprint-newline+ :unconditional xp))))
+		:collect `(pxp.stream:pprint-newline+ :unconditional xp))))
     (if (null (cdr forms))
         (car forms)
 	(cons 'progn forms))))
@@ -1523,7 +961,7 @@
       (when (char= c #\newline)
 	(multiple-value-bind (colon atsign)
 	    (parse-params (1+ i) nil :nocolonatsign T)
-	  (when atsign (push `(pprint-newline+ :unconditional xp) result))
+	  (when atsign (push `(pxp.stream:pprint-newline+ :unconditional xp) result))
 	  (incf j)
 	  (when (not colon)
 	    (setq j (position-if-not
@@ -1542,7 +980,7 @@
 
 (declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
 (defun formatter-fn (*string* *default-package*)
-  (handler-case `(apply (function call-with-xp-stream)
+  (handler-case `(apply (function pxp.stream:call-with-xp-stream)
 			(function
 			  (lambda (xp &rest args)
 			    ,@(bind-initial
@@ -1686,7 +1124,7 @@
 
 (defun using-format (xp string &rest args)
   (let ((result (apply #'cl:format nil string args)))
-    (write-string+ result xp 0 (length result))))
+    (pxp.stream:write-string+ result xp 0 (length result))))
 
 ;Format directives that get open coded "P%&~|T*?^"
 
@@ -1694,9 +1132,9 @@
   (multiple-value-bind (colon atsign) (parse-params start nil)
   (let ((arg (if colon `(car (backup-in-list 1 ,(initial) ,(args))) (get-arg))))
     (if atsign
-	`(if (not (eql ,arg 1)) (write-string++ "ies" xp 0 3) (write-char++ #\y xp))
+	`(if (not (eql ,arg 1)) (pxp.stream:write-string++ "ies" xp 0 3) (pxp.stream:write-char++ #\y xp))
 	`(when (not (eql ,arg 1))
-	   (write-char++ #\s XP))))))
+	   (pxp.stream:write-char++ #\s XP))))))
 
 (def-format-handler #\% (start end) (declare (ignore end))
   (multiple-newlines start :unconditional))
@@ -1709,12 +1147,12 @@
       (parse-params start '(1) :nocolon T :noatsign T)
       (declare (ignore colon atsign))
     (if (eql (car params) 1)
-        `(pprint-newline+ ,kind xp)
+        `(pxp.stream:pprint-newline+ ,kind xp)
 	`(multiple-newlines1 xp ,kind ,(car params)))))
 
 (defun multiple-newlines1 (xp kind num)
   (loop :repeat num
-	:do (pprint-newline+ kind xp)
+	:do (pxp.stream:pprint-newline+ kind xp)
 	    (setq kind :unconditional)))
 
 (def-format-handler #\| (start end) (declare (ignore end))
@@ -1728,15 +1166,15 @@
       (parse-params start '(1) :nocolon t :noatsign t)
       (declare (ignore colon atsign))
     (if (eql (car params) 1)
-        `(write-char++ ,char xp)
+        `(pxp.stream:write-char++ ,char xp)
 	`(multiple-chars1 xp ,(car params) ,char))))
 
 (defun multiple-chars1 (xp num char)
-  (loop :repeat num :do (write-char++ char xp)))
+  (loop :repeat num :do (pxp.stream:write-char++ char xp)))
 
 (def-format-handler #\T (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign params) (parse-params start '(1 1))
-    `(pprint-tab+ ,(if colon
+    `(pxp.stream:pprint-tab+ ,(if colon
 		       (if atsign :section-relative :section)
 		       (if atsign :line-relative :line))
 		  ,(pop params) ,(pop params) xp)))
@@ -1766,7 +1204,7 @@
 			  (values list &optional))
 		backup-to))
 (defun backup-to (num list some-tail)
-  (if (not *circularity-hash-table*)
+  (if (not pxp.stream:*circularity-hash-table*)
       (nthcdr num list)
       (multiple-value-bind (pos share) (tail-pos list some-tail)
 	  (declare (ignore pos))
@@ -1852,12 +1290,12 @@
   (multiple-value-bind (colon atsign) (parse-params start nil)
     (setq start (1+ (params-end *string* :start start)))
     (setq end (directive-start end))
-    `(progn (push-char-mode xp ,(cond ((and colon atsign) :UP)
+    `(progn (pxp.stream:push-char-mode xp ,(cond ((and colon atsign) :UP)
 				      (colon :CAP1)
 				      (atsign :CAP0)
 				      (T :DOWN)))
 	    ,@(compile-format start end)
-	    (pop-char-mode xp))))
+	    (pxp.stream:pop-char-mode xp))))
 
 (def-format-handler #\; (start end) (declare (ignore start))
   (failed-to-compile 15 "~~; appears out of context" *string* (1- end)))
@@ -1944,7 +1382,7 @@
 
 (def-format-handler #\_ (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil)
-    `(pprint-newline+ ,(cond ((and colon atsign) :mandatory)
+    `(pxp.stream:pprint-newline+ ,(cond ((and colon atsign) :mandatory)
 			     (colon :fill)
 			     (atsign :miser)
 			     (T :linear)) XP)))
@@ -1953,7 +1391,7 @@
   (multiple-value-bind (colon atsign params)
       (parse-params start '(0) :noatsign T)
       (declare (ignore atsign))
-    `(pprint-indent+ ,(if colon :current :block) ,(car params) XP)))
+    `(pxp.stream:pprint-indent+ ,(if colon :current :block) ,(car params) XP)))
 
 (def-format-handler #\W (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil)
@@ -1998,15 +1436,15 @@
 					 (directive-start (cadr chunks)))))))))))))
 
 
-(declaim (ftype (function (xp-structure t boolean)
+(declaim (ftype (function (pxp.stream:xp-structure t boolean)
 			  (values boolean &optional))
 		check-block-abbreviation))
 (defun check-block-abbreviation (xp args circle-check?)
   (cond ((not (listp args)) (write+ args xp) T)
 	((and *print-level* (> pxp.dispatch:*current-level* *print-level*))
-	 (write-char++ #\# XP) (setq *abbreviation-happened* T) T)
-	((and *circularity-hash-table* circle-check?
-	      (eq (circularity-process xp args nil) :subsequent)) T)
+	 (pxp.stream:write-char++ #\# XP) (setq pxp.stream:*abbreviation-happened* T) T)
+	((and pxp.stream:*circularity-hash-table* circle-check?
+	      (eq (pxp.stream:circularity-process xp args nil) :subsequent)) T)
 	(T nil)))
 
 
@@ -2015,9 +1453,9 @@
   (if (not doit?)
       body
       (mapcan #'(lambda (form)
-		  (cond ((eq (car form) 'write-string++)
+		  (cond ((eq (car form) 'pxp.stream:write-string++)
 			 (fill-transform-literal (cadr form)))
-			((eq (car form) 'write-char++)
+			((eq (car form) 'pxp.stream:write-char++)
 			 (fill-transform-char (cadr form)))
 			(T (list form))))
 	      body)))
@@ -2026,8 +1464,8 @@
 (declaim (ftype (function (character) (values cons &optional)) fill-transorm-char))
 (defun fill-transform-char (char)
   (if (or (char= char #\space) (char= char #\tab))
-      (list `(write-char++ ,char xp) '(pprint-newline+ :fill xp))
-      `((write-char++ ,char xp))))
+      (list `(pxp.stream:write-char++ ,char xp) '(pxp.stream:pprint-newline+ :fill xp))
+      `((pxp.stream:write-char++ ,char xp))))
 
 
 (declaim (ftype (function (string) (values list &optional)) fill-transform-literal))
@@ -2039,10 +1477,10 @@
 	  (setq end (position-if-not #'white-space string :start (1+ white))))
 	(when (null end)
 	  (setq end (length string)))
-	(push `(write-string++ ,(subseq string index end) xp ,0 ,(- end index))
+	(push `(pxp.stream:write-string++ ,(subseq string index end) xp ,0 ,(- end index))
 	      result)
 	(when white
-	  (push '(pprint-newline+ :fill xp) result))
+	  (push '(pxp.stream:pprint-newline+ :fill xp) result))
 	(when (null white)
 	  (return (nreverse result)))))))
 
@@ -2053,7 +1491,7 @@
 (defun pretty-array (xp array)
   (cond ((vectorp array) (pretty-vector xp array))
 	((zerop (array-rank array))
-	 (write-string++ "#0A " xp 0 4)
+	 (pxp.stream:write-string++ "#0A " xp 0 4)
 	 (write+ (aref array) xp))
 	(T (pretty-non-vector xp array))))
 
@@ -2065,8 +1503,8 @@
 	      (write+ (aref v i) xp)
 	      (when (= (incf i) end)
 		(return nil))
-	      (write-char++ #\space xp)
-	      (pprint-newline+ :fill xp))))))
+	      (pxp.stream:write-char++ #\space xp)
+	      (pxp.stream:pprint-newline+ :fill xp))))))
 
 (defvar *prefix*)
 
@@ -2089,8 +1527,8 @@
 			       (pretty-slice (1+ slice)))
 			   (when (= (incf i) end)
 			     (return nil))
-			   (write-char++ #\space xp)
-			   (pprint-newline+ (if (= slice bottom) :fill :linear) xp)))))))
+			   (pxp.stream:write-char++ #\space xp)
+			   (pxp.stream:pprint-newline+ (if (= slice bottom) :fill :linear) xp)))))))
       (pretty-slice 0))))
 
 ;Must use pprint-logical-block (no +) in the following three, because they are
@@ -2103,8 +1541,8 @@
     (pprint-exit-if-list-exhausted)
     (loop (write+ (pprint-pop) s)
 	  (pprint-exit-if-list-exhausted)
-	  (write-char++ #\space s)
-	  (pprint-newline+ :linear s))))
+	  (pxp.stream:write-char++ #\space s)
+	  (pxp.stream:pprint-newline+ :linear s))))
 
 (defun pprint-fill (s list &optional (colon? T) atsign?)
     (declare (ignore atsign?))
@@ -2113,8 +1551,8 @@
     (pprint-exit-if-list-exhausted)
     (loop (write+ (pprint-pop) s)
 	  (pprint-exit-if-list-exhausted)
-	  (write-char++ #\space s)
-	  (pprint-newline+ :fill s))))
+	  (pxp.stream:write-char++ #\space s)
+	  (pxp.stream:pprint-newline+ :fill s))))
 
 (defun pprint-tabular (s list &optional (colon? T) atsign? (tabsize nil))
   (declare (ignore atsign?))
@@ -2124,9 +1562,9 @@
     (pprint-exit-if-list-exhausted)
     (loop (write+ (pprint-pop) s)
 	  (pprint-exit-if-list-exhausted)
-	  (write-char++ #\space s)
-	  (pprint-tab+ :section-relative 0 tabsize s)
-	  (pprint-newline+ :fill s))))
+	  (pxp.stream:write-char++ #\space s)
+	  (pxp.stream:pprint-tab+ :section-relative 0 tabsize s)
+	  (pxp.stream:pprint-newline+ :fill s))))
 
 (defun fn-call (xp list)
   (funcall (formatter "~:<~W~^ ~:I~@_~@{~W~^ ~_~}~:>") xp list))
@@ -2161,12 +1599,12 @@
   (let ((i 0) (in-first-section T))
     (pprint-logical-block+ (xp list "(" ")" nil T nil)
       (write+ (pprint-pop) xp)
-      (pprint-indent+ :current 1 xp)
+      (pxp.stream:pprint-indent+ :current 1 xp)
       (loop
 	(pprint-exit-if-list-exhausted)
-	(write-char++ #\space xp)
+	(pxp.stream:write-char++ #\space xp)
 	(when (eq i (car template))
-	  (pprint-indent+ :block (cadr template) xp)
+	  (pxp.stream:pprint-indent+ :block (cadr template) xp)
 	  (setq template (cddr template))
 	  (setq in-first-section nil))
 	(pprint-newline (cond ((and (zerop i) in-first-section) :miser)
@@ -2178,11 +1616,11 @@
 
 (defun maybelab (xp item &rest args)
     (declare (ignore args) (special need-newline indentation))
-  (when need-newline (pprint-newline+ :mandatory xp))
+  (when need-newline (pxp.stream:pprint-newline+ :mandatory xp))
   (cond ((and item (symbolp item))
 	 (write+ item xp)
 	 (setq need-newline nil))
-	(T (pprint-tab+ :section indentation 0 xp)
+	(T (pxp.stream:pprint-tab+ :section indentation 0 xp)
 	   (write+ item xp)
 	   (setq need-newline T))))
 
@@ -2451,7 +1889,7 @@
   ;; circularity testing
   (let ((code (bq-struct-code obj)))
     (declare (simple-string code))
-    (write-string++ code xp 0 (length code))
+    (pxp.stream:write-string++ code xp 0 (length code))
     (write+ (bq-struct-data obj) xp)))
 
 ;Convert the backquote form to a list resembling what the user typed in,
