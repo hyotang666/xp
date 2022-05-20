@@ -292,11 +292,6 @@
 ;non-literal newlines do not count as word breaks.
 
 
-;This handles the basic outputting of characters.  note + suffix means that
-;the stream is known to be an XP stream, all inputs are mandatory, and no
-;error checking has to be done.  Suffix ++ additionally means that the
-;output is guaranteed not to contain a newline char.
-
 
 ;;;  The next function scans the queue looking for things it can do.
 ;;; it keeps outputting things until the queue is empty, or it finds
@@ -368,29 +363,10 @@
     (attempt-to-output xp T T))
   (values))
 
-
-(declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
-;note this checks (> BUFFER-PTR LINEL) instead of (> (line-position<-buffer-position) LINEL)
-;this is important so that when things are longer than a line they
-;end up getting printed in chunks of size LINEL.
-(defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
-  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
-    (force-some-output xp))
-  (pxp.buffer:add-char (if (char-mode xp)
-			   (handle-char-mode xp char)
-			   char)
-		       xp)
-  (values))
-
-
-(declaim (ftype (function (character xp-structure) (values &optional))
-	write-char+))
-(defun write-char+ (char xp)
-  (if (eql char #\newline)
-      (pprint-newline+ :unconditional xp)
-      (write-char++ char xp))
-  (values))
-
+;This handles the basic outputting of characters.  note + suffix means that
+;the stream is known to be an XP stream, all inputs are mandatory, and no
+;error checking has to be done.
+;;;; +++ suffix functions.
 
 (declaim (ftype (function (string xp-structure
 			  (mod #.array-total-size-limit)
@@ -405,6 +381,22 @@
 				   #'identity))
   (values))
 
+;;;; ++ suffix functions.
+;;  Suffix ++ additionally means that the output is guaranteed not to contain a newline char.
+
+(declaim (ftype (function (character xp-structure) (values &optional)) write-char++))
+;note this checks (> BUFFER-PTR LINEL) instead of (> (line-position<-buffer-position) LINEL)
+;this is important so that when things are longer than a line they
+;end up getting printed in chunks of size LINEL.
+(defun write-char++ (char xp &aux (char char)) ; To muffle sbcl compiler.
+  (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
+    (force-some-output xp))
+  (pxp.buffer:add-char (if (char-mode xp)
+			   (handle-char-mode xp char)
+			   char)
+		       xp)
+  (values))
+
 (declaim (ftype (function (string xp-structure
 			  (mod #.array-total-size-limit)
 			  (mod #.array-total-size-limit))
@@ -415,6 +407,15 @@
     (force-some-output xp))
   (write-string+++ string xp start end))
 
+;;;; + suffix functions.
+
+(declaim (ftype (function (character xp-structure) (values &optional))
+	write-char+))
+(defun write-char+ (char xp)
+  (if (eql char #\newline)
+      (pprint-newline+ :unconditional xp)
+      (write-char++ char xp))
+  (values))
 
 (declaim (ftype (function (string xp-structure (mod #.array-total-size-limit)
 			  (mod #.array-total-size-limit))
@@ -431,7 +432,6 @@
 
 (deftype tab-kind ()
 '(member :section :line-relative :section-relative :line))
-
 
 (declaim (ftype (function (tab-kind
 		   (integer 0 *)
@@ -467,7 +467,6 @@
 ;note following is smallest number >= x that is a multiple of colinc
 ;  (* colinc (floor (+ x (1- colinc)) colinc))
 
-
 (declaim (ftype (function ((or pxp.queue:newline-kind (member :fresh :unconditional))
 			   xp-structure)
 			  (values &optional))
@@ -484,6 +483,13 @@
     (attempt-to-output xp T nil))
   (values))
 
+(declaim (ftype (function (pxp.queue:indent-kind fixnum xp-structure) (values &optional))
+		pprint-indent+))
+(defun pprint-indent+ (kind n xp)
+  (pxp.queue:enqueue xp :ind kind
+		     :arg n
+		     :position (pxp.buffer:total-position<-buffer-position xp)
+		     :depth (pxp.stack:depth-in-blocks xp)))
 
 (declaim (ftype (function (xp-structure (or null string)
 					boolean
@@ -518,14 +524,6 @@
 		       :sync :offset)
     (pxp.stack:pop-block-stack xp))
   (values))
-
-(declaim (ftype (function (pxp.queue:indent-kind fixnum xp-structure) (values &optional))
-		pprint-indent+))
-(defun pprint-indent+ (kind n xp)
-  (pxp.queue:enqueue xp :ind kind
-		     :arg n
-		     :position (pxp.buffer:total-position<-buffer-position xp)
-		     :depth (pxp.stack:depth-in-blocks xp)))
 
 ;this can only be called last!
 
@@ -657,7 +655,6 @@
 
 (deftype stream-designator ()
   '(or boolean stream))
-
 
 (declaim (ftype (function (stream-designator) (values stream &optional)) decode-stream-arg))
 (defun decode-stream-arg (stream)
