@@ -161,19 +161,18 @@
 (defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream
 			 pxp.buffer:buffer pxp.stack:stack pxp.queue:queue)
   ((base-stream :initform nil :initarg :base-stream
-       	 :type (or null stream) :accessor base-stream
-       	 :documentation "The stream io eventually goes to.")
-   (linel :initform nil :initarg :linel :accessor linel
+		:type (or null stream) :accessor base-stream
+		:documentation "The stream io eventually goes to.")
+   (linel :accessor linel
           :documentation "The line length to use for formatting." )
    (line-limit :initform nil :initarg :line-limit :accessor line-limit
-       	:documentation "If non-NIL the max number of lines to print.")
-   (line-no :initform nil :initarg :line-no :accessor line-no
+	       :documentation "If non-NIL the max number of lines to print.")
+   (line-no :accessor line-no
             :documentation "number of next line to be printed.")
-   (char-mode :type char-mode :initform nil :initarg :char-mode
-              :accessor char-mode)
-   (char-mode-counter :initform nil :initarg :char-mode-counter
-       	       :accessor char-mode-counter
-       	       :documentation "depth of nesting of ~(...~)")))
+   (char-mode :type char-mode :initform nil :accessor char-mode)
+   (char-mode-counter
+     :accessor char-mode-counter
+     :documentation "depth of nesting of ~(...~)")))
 
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
