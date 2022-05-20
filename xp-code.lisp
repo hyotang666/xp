@@ -259,8 +259,8 @@
 (declaim (ftype (function (xp-structure char-mode) (values &optional))
 		push-char-mode))
 (defun push-char-mode (xp new-mode)
-  (if (zerop (char-mode-counter xp))
-      (setf (char-mode xp) new-mode))
+  (when (zerop (char-mode-counter xp))
+    (setf (char-mode xp) new-mode))
   (incf (char-mode-counter xp))
   (values))
 
@@ -268,8 +268,8 @@
 (declaim (ftype (function (xp-structure) (values &optional)) pop-char-mode))
 (defun pop-char-mode (xp)
   (decf (char-mode-counter xp))
-  (if (zerop (char-mode-counter xp))
-      (setf (char-mode xp) nil))
+  (when (zerop (char-mode-counter xp))
+    (setf (char-mode xp) nil))
   (values))
 
 ;Assumes is only called when char-mode is non-nil
@@ -379,8 +379,8 @@
   (when (> (pxp.buffer:buffer-ptr xp) (linel xp))
     (force-some-output xp))
   (pxp.buffer:add-char (if (char-mode xp)
-			 (handle-char-mode xp char)
-			 char)
+			   (handle-char-mode xp char)
+			   char)
 		       xp)
   (values))
 
@@ -388,8 +388,9 @@
 (declaim (ftype (function (character xp-structure) (values &optional))
 	write-char+))
 (defun write-char+ (char xp)
-  (if (eql char #\newline) (pprint-newline+ :unconditional xp)
-    (write-char++ char xp))
+  (if (eql char #\newline)
+      (pprint-newline+ :unconditional xp)
+      (write-char++ char xp))
   (values))
 
 
@@ -402,8 +403,8 @@
 (defun write-string+++ (string xp start end)
   (pxp.buffer:add-string string xp :start start :end end
 			 :mode (if (char-mode xp)
-				 (lambda (char) (handle-char-mode xp char))
-				 #'identity))
+				   (lambda (char) (handle-char-mode xp char))
+				   #'identity))
   (values))
 
 (declaim (ftype (function (string xp-structure
@@ -447,20 +448,21 @@
       (:line-relative (setq relative? T))
       (:section-relative (setq indented? T relative? T)))
     (let* ((current
-	     (if (not indented?) (pxp.buffer:line-position<-buffer-position xp)
-	       (- (pxp.buffer:total-position<-buffer-position xp) (pxp.stack:section-start xp))))
+	     (if (not indented?)
+	         (pxp.buffer:line-position<-buffer-position xp)
+	         (- (pxp.buffer:total-position<-buffer-position xp) (pxp.stack:section-start xp))))
 	   (new
 	     (if (zerop colinc)
-	       (if relative? (+ current colnum) (max colnum current))
-	       (cond (relative?
-		       (* colinc (floor (+ current colnum colinc -1) colinc)))
-		     ((> colnum current) colnum)
-		     (T (+ colnum
-			   (* colinc
-			      (floor (+ current (- colnum) colinc) colinc)))))))
+	         (if relative? (+ current colnum) (max colnum current))
+	         (cond (relative?
+			 (* colinc (floor (+ current colnum colinc -1) colinc)))
+		       ((> colnum current) colnum)
+		       (T (+ colnum
+			     (* colinc
+				(floor (+ current (- colnum) colinc) colinc)))))))
 	   (length (- new current)))
       (when (plusp length)
-	(if (char-mode xp) (handle-char-mode xp #\space))
+	(when (char-mode xp) (handle-char-mode xp #\space))
 	(pxp.buffer:skip-to length xp))))
   (values))
 
@@ -493,9 +495,9 @@
 (defun start-block (xp prefix-string on-each-line? suffix-string
 		       &aux (prefix-string prefix-string)) ; Rebinding to muffle sbcl compiler.
   (when prefix-string (write-string++ prefix-string xp 0 (length prefix-string)))
-  (if (and (char-mode xp) on-each-line?)
-      (setq prefix-string
-	    (pxp.buffer:prefix xp :rewind (length prefix-string))))
+  (when (and (char-mode xp) on-each-line?)
+    (setq prefix-string
+	  (pxp.buffer:prefix xp :rewind (length prefix-string))))
   (pxp.stack:push-block-stack xp)
   (pxp.queue:enqueue xp :start-block nil
 		     :arg (if on-each-line? (cons suffix-string prefix-string) suffix-string)
@@ -518,7 +520,6 @@
 		       :sync :offset)
     (pxp.stack:pop-block-stack xp))
   (values))
-
 
 (declaim (ftype (function (pxp.queue:indent-kind fixnum xp-structure) (values &optional))
 		pprint-indent+))
@@ -649,7 +650,8 @@
 		 (write-char++ #\= xp)
 		 (setf (gethash object *circularity-hash-table*) (- id))
 		 :first)
-		(T (if interior-cdr? (write-string++ ". #" xp 0 3)
+		(T (if interior-cdr?
+		       (write-string++ ". #" xp 0 3)
 		       (write-char++ #\# xp))
 		   (print-fixnum xp (- id))
 		   (write-char++ #\# xp)
@@ -674,7 +676,9 @@
       (when (and *circularity-hash-table* (consp object))
 	;;avoid possible double check in handle-logical-block.
 	(setq object (cons (car object) (cdr object))))
-      (let ((printer (if *print-pretty* (pxp.dispatch:get-printer object pxp.dispatch:*print-pprint-dispatch*) nil))
+      (let ((printer (if *print-pretty*
+		         (pxp.dispatch:get-printer object pxp.dispatch:*print-pprint-dispatch*)
+			 nil))
 	    type)
 	(cond (printer (funcall printer xp object))
 	      ((maybe-print-fast xp object))
@@ -814,9 +818,9 @@
 		       (no-escapes-needed s))
 		  (when (and is-key *print-escape*)
 		    (write-char++ #\: xp))
-		  (if mode (push-char-mode xp mode))
+		  (when mode (push-char-mode xp mode))
 		  (write-string++ s xp 0 (length s))
-		  (if mode (pop-char-mode xp)) T))))))
+		  (when mode (pop-char-mode xp)) T))))))
 
 
 (declaim (ftype (function (xp-structure fixnum) (values &optional)) print-fixnum))
@@ -991,7 +995,8 @@
 
 (defun safe-assoc (item list)
   (do ((l list (cdr l))) ((not (consp l)) nil)
-    (if (and (consp (car l)) (eq (caar l) item)) (return (car l)))))
+    (when (and (consp (car l)) (eq (caar l) item))
+      (return (car l)))))
 
 ;           ---- FUNCTIONAL INTERFACE TO DYNAMIC FORMATTING ----
 
@@ -1033,14 +1038,16 @@
   `(let ((pxp.dispatch:*current-level* (1+ pxp.dispatch:*current-level*))
 	 (*current-length* -1)
 	 (*parents* *parents*)
-	 ,@(if (and circle-check? atsign?) `((not-first-p (plusp *current-length*)))))
+	 ,@(when (and circle-check? atsign?)
+	     `((not-first-p (plusp *current-length*)))))
      (unless (check-block-abbreviation ,var ,args ,circle-check?)
        (block logical-block
 	 (start-block ,var ,prefix ,per-line? ,suffix)
 	 (unwind-protect
 	   (macrolet ((pprint-pop () `(pprint-pop+ ,',args ,',var))
 		      (pprint-exit-if-list-exhausted ()
-			`(if (null ,',args) (return-from logical-block nil))))
+			`(when (null ,',args)
+			   (return-from logical-block nil))))
 	     ,@ body)
 	   (end-block ,var ,suffix))))))
 
@@ -1145,13 +1152,13 @@
 2: End position of param, or nil."
   (let ((i (position #\~ control-string :start start :end end)))
     (if (null i)
-      (values nil nil)
-      (let ((j (params-end control-string :start (1+ i))))
-	(if (not (char= (aref control-string j) #\/))
-	  (values i j)
-	  (values i (or (position #\/ control-string :start (1+ j) :end end)
-			(failed-to-compile 3 "Matching / missing"
-			     control-string (position #\/ control-string :start start)))))))))
+        (values nil nil)
+        (let ((j (params-end control-string :start (1+ i))))
+	  (if (not (char= (aref control-string j) #\/))
+	      (values i j)
+	      (values i (or (position #\/ control-string :start (1+ j) :end end)
+			    (failed-to-compile 3 "Matching / missing"
+					       control-string (position #\/ control-string :start start)))))))))
 
 (declaim (ftype (function (string (mod #.array-total-size-limit))
 			  (values boolean &optional))
@@ -1178,15 +1185,16 @@
                    (if (or (find c "_Ii/Ww")
                            (and (find c ">Tt")
                                 (colonp control-string j)))
-                     t
-                     (multiple-value-call #'rec
-                       (next-directive1 control-string :start j :end end)))))))
+                       t
+                       (multiple-value-call #'rec
+                         (next-directive1 control-string :start j :end end)))))))
       (multiple-value-call #'rec (next-directive1 control-string :start 0 :end end)))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
 (defun maybe-compile-format-string (string force-fn?)
-  (if (not (or force-fn? (fancy-directives-p string))) string
+  (if (not (or force-fn? (fancy-directives-p string)))
+      string
       (eval `(formatter ,string))))
 
 (defvar *format-string-cache* T)
@@ -1215,7 +1223,8 @@
 	((null stream)
 	 (with-output-to-string (stream)
 	   (apply #'format stream string-or-fn args)))
-	(T (if (eq stream T) (setq stream *standard-output*))
+	(T (when (eq stream T)
+	     (setq stream *standard-output*))
 	   (when (stringp string-or-fn)
 	     (setq string-or-fn (process-format-string string-or-fn nil)))
 	   (cond ((not (stringp string-or-fn))
@@ -1268,7 +1277,8 @@
 	      (body (progn ,@ code)))
 	 (if *used-args* (make-binding 'args val body) (cons val body)))
       `(flet ((code () ,@ code))
-	 (if (not ,doit?) (code) ;important bindings not done if not doit?
+	 (if (not ,doit?)
+	     (code) ;important bindings not done if not doit?
 	     (let* ((val ,val)
 		    (*used-args* nil)
 		    (body (code)))
@@ -1463,7 +1473,8 @@
 	    ((char= c #\') (incf i) (push (aref *string* i) params) (incf i))
 	    ((char= c #\,) (push nil params))
 	    (T (setq j (position-not-in *string* "+-0123456789" :start i))
-	       (if (= i j) (return nil))
+	       (when (= i j)
+		 (return nil))
 	       (push (parse-integer *string* :start i :end j :radix 10.) params)
 	       (setq i j)))
       (if (char= (aref *string* i) #\,) (incf i) (return nil)))
@@ -1476,21 +1487,26 @@
 		  ((not (consp (car ps))) (car ps))
 		  (T `(cond (,(car ps)) (T ,(car ds)))))
 	    nps))
-    (if (and max (< max (length params))) (failed-to-compile 6 "Too many parameters" *string* i))
+    (when (and max (< max (length params)))
+      (failed-to-compile 6 "Too many parameters" *string* i))
     (loop
       (setq c (aref *string* i))
       (cond ((char= c #\:)
-	     (if colon (failed-to-compile 7 "Two colons specified" *string* i))
+	     (when colon
+	       (failed-to-compile 7 "Two colons specified" *string* i))
 	     (setq colon T))
 	    ((char= c #\@)
-	     (if atsign (failed-to-compile 8 "Two atsigns specified" *string* i))
+	     (when atsign
+	       (failed-to-compile 8 "Two atsigns specified" *string* i))
 	     (setq atsign T))
 	    (T (return nil)))
       (incf i))
-    (if (and colon nocolon) (failed-to-compile 9 "Colon not permitted" *string* i))
-    (if (and atsign noatsign) (failed-to-compile 10 "Atsign not permitted" *string* i))
-    (if (and colon atsign nocolonatsign)
-	(failed-to-compile 11 "Colon and atsign together not permitted" *string* i))
+    (when (and colon nocolon)
+      (failed-to-compile 9 "Colon not permitted" *string* i))
+    (when (and atsign noatsign)
+      (failed-to-compile 10 "Atsign not permitted" *string* i))
+    (when (and colon atsign nocolonatsign)
+      (failed-to-compile 11 "Colon and atsign together not permitted" *string* i))
     (values colon atsign params)))
 
 
@@ -1538,7 +1554,8 @@
 						 (*inner-end* 'top)
 						 (*outer-end* 'top))
 					     (compile-format 0 (length *string*))))))
-			    (if ,(args) (copy-list ,(args))))) ;needed by symbolics.
+			    (when ,(args)
+			      (copy-list ,(args))))) ;needed by symbolics.
 			s args)
     (failed-to-compile (c)
       (warn c)
@@ -1625,12 +1642,14 @@
 	       (funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ vars)))))))
 
 (def-format-handler #\A (start end)
-  (if (not (= end (1+ start))) (simple-directive start end)
+  (if (not (= end (1+ start)))
+      (simple-directive start end)
       `(let ((*print-escape* nil))
 	 (write+ ,(get-arg) XP))))
 
 (def-format-handler #\S (start end)
-  (if (not (= end (1+ start))) (simple-directive start end)
+  (if (not (= end (1+ start)))
+      (simple-directive start end)
       `(let ((*print-escape* T))
 	 (write+ ,(get-arg) XP))))
 
@@ -1678,7 +1697,8 @@
   (let ((arg (if colon `(car (backup-in-list 1 ,(initial) ,(args))) (get-arg))))
     (if atsign
 	`(if (not (eql ,arg 1)) (write-string++ "ies" xp 0 3) (write-char++ #\y xp))
-	`(if (not (eql ,arg 1)) (write-char++ #\s XP))))))
+	`(when (not (eql ,arg 1))
+	   (write-char++ #\s XP))))))
 
 (def-format-handler #\% (start end) (declare (ignore end))
   (multiple-newlines start :unconditional))
@@ -1690,7 +1710,8 @@
   (multiple-value-bind (colon atsign params)
       (parse-params start '(1) :nocolon T :noatsign T)
       (declare (ignore colon atsign))
-    (if (eql (car params) 1) `(pprint-newline+ ,kind xp)
+    (if (eql (car params) 1)
+        `(pprint-newline+ ,kind xp)
 	`(multiple-newlines1 xp ,kind ,(car params)))))
 
 (defun multiple-newlines1 (xp kind num)
@@ -1708,7 +1729,8 @@
   (multiple-value-bind (colon atsign params)
       (parse-params start '(1) :nocolon t :noatsign t)
       (declare (ignore colon atsign))
-    (if (eql (car params) 1) `(write-char++ ,char xp)
+    (if (eql (car params) 1)
+        `(write-char++ ,char xp)
 	`(multiple-chars1 xp ,(car params) ,char))))
 
 (defun multiple-chars1 (xp num char)
@@ -1716,8 +1738,9 @@
 
 (def-format-handler #\T (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign params) (parse-params start '(1 1))
-    `(pprint-tab+ ,(if colon (if atsign :section-relative :section)
-		             (if atsign :line-relative :line))
+    `(pprint-tab+ ,(if colon
+		       (if atsign :section-relative :section)
+		       (if atsign :line-relative :line))
 		  ,(pop params) ,(pop params) xp)))
 
 (def-format-handler #\* (start end) (declare (ignore end))
@@ -1730,7 +1753,8 @@
 	  (parse-params start '(1))
 	  (declare (ignore atsign))
 	`(setq args
-	       ,(if colon `(backup-in-list ,(car params) ,(initial) ,(args))
+	       ,(if colon
+		    `(backup-in-list ,(car params) ,(initial) ,(args))
 		    `(nthcdr ,(car params) ,(args)))))))
 
 ;fancy stuff here, so will not get spurious indications of circularity.
@@ -1744,10 +1768,12 @@
 			  (values list &optional))
 		backup-to))
 (defun backup-to (num list some-tail)
-  (if (not *circularity-hash-table*) (nthcdr num list)
+  (if (not *circularity-hash-table*)
+      (nthcdr num list)
       (multiple-value-bind (pos share) (tail-pos list some-tail)
 	  (declare (ignore pos))
-	(if (not (< num share)) (nthcdr num list)
+	(if (not (< num share))
+	    (nthcdr num list)
 	    (do ((L (nthcdr num list) (cdr L))
 		 (n (- share num) (1- n))
 		 (R nil (cons (car L) R)))
@@ -1773,13 +1799,16 @@
       (do ((m n (1- m))
 	   (ST some-tail (cdr ST)))
 	  (nil)
-	(if (minusp m) (return nil))
-	(if (eq ST L) (return-from outer (values m n)))))))
+	(when (minusp m)
+	  (return nil))
+	(when (eq ST L)
+	  (return-from outer (values m n)))))))
 
 (def-format-handler #\? (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil :nocolon t)
       (declare (ignore colon))
-    (if (not atsign) `(apply #'format xp ,(get-arg) ,(get-arg))
+    (if (not atsign)
+        `(apply #'format xp ,(get-arg) ,(get-arg))
 	`(let ((fn (process-format-string ,(get-arg) T)))
 	   (setq args (apply fn xp ,(args)))))))
 
@@ -1787,9 +1816,9 @@
   (multiple-value-bind (colon atsign params)
       (parse-params start nil :max 3 :noatsign t)
       (declare (ignore atsign))
-    `(if ,(cond ((null params) `(null ,(if colon `(cdr ,(outer-args)) (args))))
-		(t `(do-complex-^-test ,@ params)))
-	 (return-from ,(if colon *outer-end* *inner-end*) nil))))
+    `(when ,(cond ((null params) `(null ,(if colon `(cdr ,(outer-args)) (args))))
+		  (t `(do-complex-^-test ,@ params)))
+       (return-from ,(if colon *outer-end* *inner-end*) nil))))
 
 (defun do-complex-^-test (a1 &optional (a2 nil) (a3 nil))
   (cond (a3 (and (<= a1 a2) (<= a2 a3)))
@@ -1855,10 +1884,14 @@
 	     (maybe-bind (not (> end start)) 'FN  ;must be second
 			 `(process-format-string ,(get-arg) T)
 	       (bind-args (not atsign) (get-arg)
-		 `((prog () ,@(if force-once '((go S)))
-		       L (if (null ,(args)) (return nil))
-		       ,@(if force-once '(S))
-			 ,@(if bounded '((if (= N 0) (return nil) (decf N))))
+		 `((prog () ,@(when force-once
+				'((go S)))
+		       L (when (null ,(args))
+			   (return nil))
+		       ,@(when force-once
+			   '(S))
+			 ,@(when bounded
+			     '((if (= N 0) (return nil) (decf N))))
 			 ,@(bind-outer-args
 			     (bind-args colon (get-arg)
 			       (bind-initial
@@ -1896,8 +1929,8 @@
       (multiple-value-setq (c i j) (next-directive *string* :start j :end end))
       (when (null c) (return n))
       (cond ((eql c #\;)
-	     (if (colonp *string* j)
-		 (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." *string* j)))
+	     (when (colonp *string* j)
+	       (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." *string* j)))
 	    ((find c "*[^<_IiWw{Tt")
 	     (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
 	    ((eql c #\() (incf n (num-args-in-directive (1+ i) j)))
@@ -1927,8 +1960,10 @@
 (def-format-handler #\W (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil)
     (cond ((not (or colon atsign)) `(write+ ,(get-arg) XP))
-	  (T `(let (,@(if colon '((*print-pretty* T)))
-		    ,@(if atsign '((*print-level* nil) (*print-length* nil))))
+	  (T `(let (,@(when colon
+			'((*print-pretty* T)))
+		    ,@(when atsign
+			'((*print-level* nil) (*print-length* nil))))
 		(write+ ,(get-arg) XP))))))
 
 (defun handle-logical-block (start end)
@@ -1979,7 +2014,8 @@
 
 (declaim (ftype (function (boolean list) (values list &optional)) fill-transform))
 (defun fill-transform (doit? body)
-  (if (not doit?) body
+  (if (not doit?)
+      body
       (mapcan #'(lambda (form)
 		  (cond ((eq (car form) 'write-string++)
 			 (fill-transform-literal (cadr form)))
@@ -2007,8 +2043,10 @@
 	  (setq end (length string)))
 	(push `(write-string++ ,(subseq string index end) xp ,0 ,(- end index))
 	      result)
-	(if white (push '(pprint-newline+ :fill xp) result))
-	(if (null white) (return (nreverse result)))))))
+	(when white
+	  (push '(pprint-newline+ :fill xp) result))
+	(when (null white)
+	  (return (nreverse result)))))))
 
  ) ;end of eval when for all (formatter "...") stuff.
 
@@ -2027,7 +2065,8 @@
       (when (plusp end)
 	(loop (pprint-pop)
 	      (write+ (aref v i) xp)
-	      (if (= (incf i) end) (return nil))
+	      (when (= (incf i) end)
+		(return nil))
 	      (write-char++ #\space xp)
 	      (pprint-newline+ :fill xp))))))
 
@@ -2050,7 +2089,8 @@
 			   (if (= slice bottom)
 			       (write+ (apply #'aref array indices) xp)
 			       (pretty-slice (1+ slice)))
-			   (if (= (incf i) end) (return nil))
+			   (when (= (incf i) end)
+			     (return nil))
 			   (write-char++ #\space xp)
 			   (pprint-newline+ (if (= slice bottom) :fill :linear) xp)))))))
       (pretty-slice 0))))
