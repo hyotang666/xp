@@ -174,6 +174,16 @@
      :accessor char-mode-counter
      :documentation "depth of nesting of ~(...~)")))
 
+(defmethod shared-initialize :after ((o xp-structure) slot-names &key stream)
+  (setf (base-stream o) stream
+        (linel o) (max 0 (cond (*print-right-margin*)
+                                ((output-width stream))
+                                (T *default-right-margin*)))
+        (line-limit o) *print-lines*
+        (line-no o) 1
+        (char-mode o) nil
+        (char-mode-counter o) 0))
+
 (defun xp-structure-p (arg)
   (typep arg 'xp-structure))
 
@@ -230,18 +240,6 @@
   :resetter (lambda (instance &rest args)
 	      (apply #'reinitialize-instance instance args))
   :destructor (lambda (instance) (setf (base-stream instance) nil)))
-
-;;;; This is called to initialize things when you start pretty printing.
-
-(defmethod shared-initialize :after ((o xp-structure) slot-names &key stream)
-  (setf (base-stream o) stream
-        (linel o) (max 0 (cond (*print-right-margin*)
-                                ((output-width stream))
-                                (T *default-right-margin*)))
-        (line-limit o) *print-lines*
-        (line-no o) 1
-        (char-mode o) nil
-        (char-mode-counter o) 0))
 
 ;The char-mode stuff is a bit tricky.
 ;one can be in one of the following modes:
