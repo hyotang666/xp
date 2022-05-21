@@ -427,20 +427,22 @@
 		     (nocolon nil) (noatsign nil) (nocolonatsign nil))
   #+sbcl ; Maybe due to &key.
   (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
-  (let ((colon nil) (atsign nil) (params nil) (i start) j c)
-    (loop (setq c (ref *string* i))
-	  (case c
-	    ((#\V #\v) (push (get-arg) params) (incf i))
-	    ((#\#) (push (num-args) params) (incf i))
-	    ((#\') (incf i) (push (ref *string* i) params) (incf i))
-	    ((#\,) (push nil params))
-	    (otherwise
-	      (setq j (position-not-in *string* "+-0123456789" :start i))
-	      (when (= i j)
-		(return nil))
-	      (push (parse-integer *string* :start i :end j :radix 10.) params)
-	      (setq i j)))
-	  (if (char= (ref *string* i) #\,) (incf i) (return nil)))
+  (let ((colon nil) (atsign nil) (params nil) (i start) j)
+    (loop :for c := (ref *string* i)
+	  :do (case c
+		((#\V #\v) (push (get-arg) params) (incf i))
+		((#\#) (push (num-args) params) (incf i))
+		((#\') (incf i) (push (ref *string* i) params) (incf i))
+		((#\,) (push nil params))
+		(otherwise
+		  (setq j (position-not-in *string* "+-0123456789" :start i))
+		  (when (= i j)
+		    (loop-finish))
+		  (push (parse-integer *string* :start i :end j :radix 10.) params)
+		  (setq i j)))
+	  :if (char= (ref *string* i) #\,)
+	    :do (incf i)
+	    :else :do (loop-finish))
     (setq params (nreverse params))
     (do ((ps params (cdr ps))
 	 (ds defaults (cdr ds))
@@ -452,17 +454,16 @@
 	    nps))
     (when (and max (< max (list-length params)))
       (failed-to-compile 6 "Too many parameters" *string* i))
-    (loop
-      (setq c (ref *string* i))
-      (case c
-	((#\:) (when colon
-		 (failed-to-compile 7 "Two colons specified" *string* i))
-	       (setq colon T))
-	((#\@) (when atsign
-		 (failed-to-compile 8 "Two atsigns specified" *string* i))
-	       (setq atsign T))
-	(otherwise (return nil)))
-      (incf i))
+    (loop :for c := (ref *string* i)
+	  :do (case c
+		((#\:) (when colon
+			 (failed-to-compile 7 "Two colons specified" *string* i))
+		       (setq colon T))
+		((#\@) (when atsign
+			 (failed-to-compile 8 "Two atsigns specified" *string* i))
+		       (setq atsign T))
+		(otherwise (loop-finish)))
+	      (incf i))
     (when (and colon nocolon)
       (failed-to-compile 9 "Colon not permitted" *string* i))
     (when (and atsign noatsign)
