@@ -262,12 +262,9 @@
       `(let ((*string* ,*string*))
 	 (apply #'format s *string* args)))))
 
-(defmacro formatter-in-package (string reader-package)
-  (formatter-fn string reader-package))
-
 (defmacro formatter (string)
   `(lambda (s &rest args)
-     (formatter-in-package ,string ,(package-name *package*))))
+     ,(formatter-fn string (package-name *package*))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
@@ -384,7 +381,7 @@
     (declare (ignore arg))
   (unread-char sub-char stream)
   `(lambda (s &rest args)
-     (formatter-in-package ,(read stream) ,(package-name *package*))))
+     ,(formatter-fn (read stream) (package-name *package*))))
 
 
 ;This gets called with start pointing to the character after the ~ that
