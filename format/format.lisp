@@ -81,29 +81,30 @@
 	       (cond
 	         ((null position)
 		  (failed-to-compile 1 "missing directive" control-string (1- start)))
-	         ((not (char= (ref control-string position) #\'))
+	         ((not (char= #\' (ref control-string position)))
 		  position)
 	         ((= (1+ position) end)
 		  (failed-to-compile 2 "No character after '" control-string position))
 	         (t
-		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
+		   (rec (position-not-in control-string "+-0123456789,Vv#:@"
+					 :start (+ 2 position)))))))
       (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
 
 (declaim (ftype (function (string (mod #.array-total-size-limit))
 			  (values boolean &optional))
 		colonp))
 (defun colonp (control-string j) ;j points to directive name
-  (or (char= (ref control-string (1- j)) #\:)
-      (and (char= (ref control-string (1- j)) #\@)
-	   (char= (ref control-string (- j 2)) #\:))))
+  (or (char= #\: (ref control-string (1- j)))
+      (and (char= #\@ (ref control-string (1- j)))
+	   (char= #\: (ref control-string (- j 2))))))
 
 (declaim (ftype (function (string (mod #.array-total-size-limit))
 			  (values boolean &optional))
 		atsignp))
 (defun atsignp (control-string j) ;j points to directive name
-  (or (char= (ref control-string (1- j)) #\@)
-      (and (char= (ref control-string (1- j)) #\:)
-	   (char= (ref control-string (- j 2)) #\@))))
+  (or (char= #\@ (ref control-string (1- j)))
+      (and (char= #\: (ref control-string (1- j)))
+	   (char= #\@ (ref control-string (- j 2))))))
 
 (declaim (ftype (function (string &key
 				  (:start (mod #.array-total-size-limit))
@@ -120,11 +121,12 @@
     (if (null i)
         (values nil nil)
         (let ((j (params-end control-string :start (1+ i))))
-	  (if (not (char= (ref control-string j) #\/))
+	  (if (not (char= #\/ (ref control-string j)))
 	      (values i j)
 	      (values i (or (position #\/ control-string :start (1+ j) :end end)
 			    (failed-to-compile 3 "Matching / missing"
-					       control-string (position #\/ control-string :start start)))))))))
+					       control-string
+					       (position #\/ control-string :start start)))))))))
 
 (declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
 (defun fancy-directives-p (control-string)
@@ -132,10 +134,10 @@
     (labels ((rec (i j)
                (when i
                  (let ((c (ref control-string j)))
-                   (if (or (find c "_Ii/Ww")
-                           (and (find c ">Tt")
-                                (colonp control-string j)))
-                       t
+                   (or (cond
+			 ((find c "_Ii/Ww") nil)
+			 ((find c ">Tt") (colonp control-string j))
+			 (t nil))
                        (multiple-value-call #'rec
                          (next-directive1 control-string :start j :end end)))))))
       (multiple-value-call #'rec (next-directive1 control-string :start 0 :end end)))))
@@ -235,6 +237,7 @@
 			  (values list &optional))
 		compile-format))
 (defun compile-format (start end)
+  "Return compiled S-Expression forms."
   (let ((start start)
 	(result nil))
     (prog (c i j)
