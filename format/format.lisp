@@ -493,7 +493,6 @@
 
 ;breaks things up at ~; directives.
 
-
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values list &optional))
@@ -507,24 +506,21 @@
 	(when (char= c #\;) (push (1+ j) positions))
 	(setq spot j)))))
 
-
-
 (declaim (ftype (function ((mod #.array-total-size-limit) &optional boolean)
 			  (values (or null (mod #.array-total-size-limit)) &optional))
 		num-args-in-args))
 (defun num-args-in-args (start &optional (errorp nil))
-  (let ((n 0) (i (1- start)) c)
+  (let ((n 0) (i (1- start)))
     (declare ((mod #.array-total-size-limit) n))
     (loop
-      (setq i (position-not-in *string* "+-0123456789," :start (1+ i)))
-      (setq c (ref *string* i))
-      (cond ((or (char= c #\V) (char= c #\v)) (incf n))
-	    ((char= c #\#)
-	     (when errorp
-	       (failed-to-compile 21 "# not allowed in ~~<...~~> by (formatter \"...\")" *string* start))
-	     (return nil))
-	    ((char= c #\') (incf i))
-	    (T (return n))))))
+      (case (ref *string* (setq i (position-not-in *string* "+-0123456789," :start (1+ i))))
+	((#\V #\v) (incf n))
+	((#\#) (when errorp
+		 (failed-to-compile 21 "# not allowed in ~~<...~~> by (formatter \"...\")"
+				    *string* start))
+	       (return nil))
+	((#\') (incf i))
+	(otherwise (return n))))))
 
 ;Both these only called if correct parse already known.
 
