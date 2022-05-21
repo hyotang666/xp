@@ -524,7 +524,6 @@
 
 ;Both these only called if correct parse already known.
 
-
 (def-format-handler #\/ (start end)
   (multiple-value-bind (colon atsign params) (parse-params start nil :max nil)
     (let* ((whole-name-start (1+ (params-end *string* :start start)))
@@ -844,20 +843,23 @@
     (multiple-value-setq (j i) (next-directive1 *string* :start start :end end))
     (loop
       (multiple-value-setq (c i j) (next-directive *string* :start j :end end))
-      (when (null c) (return n))
-      (cond ((eql c #\;)
-	     (when (colonp *string* j)
-	       (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")." *string* j)))
-	    ((find c "*[^<_IiWw{Tt")
-	     (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
-	    ((eql c #\() (incf n (num-args-in-directive (1+ i) j)))
-	    ((find c "%&\|~") (incf n (num-args-in-args (1+ i) T)))
-	    ((eql c #\?)
-	     (when (atsignp *string* j)
-	       (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")." *string* j))
-	     (incf n 2))
-	    ((find c "AaSsDdBbOoXxRrCcFfEeGg$Pp")
-	     (incf n (1+ (num-args-in-args (1+ i) T))))))))
+      (if (null c)
+	(return n)
+	(case c
+	  ((#\;) (when (colonp *string* j)
+		   (failed-to-compile 22 "~~:; not supported in ~~<...~~> by (formatter \"...\")."
+				      *string* j)))
+	  (#.(coerce "*[^<_IiWw{Tt" 'list)
+	   (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")."
+			      *string* j))
+	  ((#\() (incf n (num-args-in-directive (1+ i) j)))
+	  (#.(coerce "%&\|~" 'list) (incf n (num-args-in-args (1+ i) T)))
+	  ((#\?) (when (atsignp *string* j)
+		   (failed-to-compile 23 "~~<...~~> too complicated to be supported by (formatter \"...\")."
+				      *string* j))
+		 (incf n 2))
+	  (#.(coerce "AaSsDdBbOoXxRrCcFfEeGg$Pp" 'list)
+	   (incf n (1+ (num-args-in-args (1+ i) T)))))))))
 
 (defun handle-standard-< (start end)
   (declare (fixnum start end))
