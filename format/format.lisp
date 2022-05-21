@@ -216,32 +216,42 @@
 (defun compile-format (start end)
   (let ((start start)
 	(result nil))
-    (prog (c i j fn)
-     L(multiple-value-setq (c i j) (next-directive *string* :start start :end end))
-      (when (if (null c) (< start end) (< start i))
-	(push (literal start (or i end)) result))
-      (when (null c) (return (nreverse result)))
-      (when (char= c #\newline)
+    (prog (c i j)
+     label
+     ;; Update vars.
+     (multiple-value-setq (c i j) (next-directive *string* :start start :end end))
+     ;; Update result.
+     (when (if c (< start i) (< start end))
+       (push (literal start (or i end)) result))
+     (cond
+       ;; Termination test.
+       ((null c) (return (nreverse result)))
+       ((char= c #\newline)
 	(multiple-value-bind (colon atsign)
-	    (parse-params (1+ i) nil :nocolonatsign T)
+	  (parse-params (1+ i) nil :nocolonatsign T)
+	  ;; Update result.
 	  (when atsign (push `(pxp.stream:pprint-newline+ :unconditional xp) result))
+	  ;; Update J.
 	  (incf j)
-	  (when (not colon)
-	    (setq j (locally
-		      #+sbcl
-		      (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
-		      (position-if-not
-			(lambda (c) (or (char= c #\tab) (char= c #\space)))
-			*string* :start j :end end)))
-	    (when (null j) (setq j end)))
-	  (setq start j)
-	  (go L)))
-      (setq fn (gethash c *fn-table*))
-      (when (null fn) (failed-to-compile 5 "Unknown format directive" *string* j))
-      (incf j)
-      (push (funcall (coerce fn 'function) (1+ i) j) result)
-      (setq start j)
-      (go L))))
+	  (unless colon
+	    (setq j (or (locally
+			  #+sbcl
+			  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+			  (position-if-not
+			    (lambda (c) (or (char= c #\tab) (char= c #\space)))
+			    *string* :start j :end end))
+			end)))
+	  ;; Update start.
+	  (setq start j)))
+       (t
+	 (let ((fn (or (gethash c *fn-table*)
+		       (failed-to-compile 5 "Unknown format directive" *string* j))))
+	   ;; Update result.
+	   (push (funcall (coerce fn 'function) (1+ i) (incf j)) result)
+	   ;; Update START.
+	   (setq start j))))
+     ;; Looping
+     (go label))))
 
 (declaim (ftype (function (string string) (values cons &optional)) <formatter-fn>))
 (defun <formatter-fn> (*string* *default-package*)
