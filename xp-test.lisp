@@ -94,7 +94,7 @@
 	:ok))))  ;doesn't happen when abort out of error.
 
 (defun do-tests ()
-  (setq pxp::*format-string-cache* t)
+  (setq pxp.format::*format-string-cache* t)
   (cl:format T "~% Running the suite of ~S test cases~%" (length test-list))
   (setq tests (do ((i (1- (length test-list)) (1- i))
 		   (r nil (cons i r)))
@@ -126,18 +126,18 @@
 #+symbolics(compile (cadar form)) ;does not work in all lisps
   (test-ordinary (cadr form)))
 
-(define-condition xp-test (pxp::failed-to-compile) ())
+(define-condition xp-test (pxp.format::failed-to-compile) ())
 
 (defun etest (form)
-  (let ((pxp::*xp-condition* 'xp-test))
+  (let ((pxp.format::*xp-condition* 'xp-test))
      (handler-case (eval form)
        #+ccl
        (ccl:compiler-warning (c)
-         (list (pxp::error-id (car (ccl::compiler-warning-args c)))
-	       (pxp::error-point (car (ccl::compiler-warning-args c)))))
+         (list (pxp.format::error-id (car (ccl::compiler-warning-args c)))
+	       (pxp.format::error-point (car (ccl::compiler-warning-args c)))))
        (xp-test (c)
-	 (list (pxp::error-id c)
-	       (pxp::error-point c))))))
+	 (list (pxp.format::error-id c)
+	       (pxp.format::error-point c))))))
 
 ;This tests things where cl:format and xp::format must always be identical.
 
@@ -1147,13 +1147,13 @@ tests
 2-")
   ((null nil) t)
 
-  ((plet 14 0 (progn (setq pxp::*format-string-cache* T) (pxp::format nil "~A" 4))) "4")
+  ((plet 14 0 (progn (setq pxp.format::*format-string-cache* T) (pxp::format nil "~A" 4))) "4")
   ((plet 14 0 (pxp::format nil "~10<foo~>" 4)) "       foo")
   ((plet 14 0 (pxp::format nil "~@<foo~:>" 4)) "foo")
   ((plet 14 0 (pxp::format nil "~@<foo~:@>" 4)) "foo")
   ((plet 14 0 (pxp::format nil "~w" 4)) "4")
   ((plet 14 0
-     (let ((pxp::*format-string-cache* nil))
+     (let ((pxp.format::*format-string-cache* nil))
        (pxp::format nil "~w" 4))) "4")
   ((plet 14 0
      (let ((string "~W"))

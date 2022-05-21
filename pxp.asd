@@ -36,6 +36,9 @@
    (:module "printer" :pathname "printer"
 	    :depends-on ("stream" "dispatch" "buffer" "queue")
 	    :components ((:file "printer")))
+   (:module "format" :pathname "format"
+	    :depends-on ("printer")
+	    :components ((:file "format")))
    (:file "xp-code" :depends-on ("buffer" "dispatch" "queue" "stream")))
   :in-order-to ((test-op (test-op "xp-test"))))
 
