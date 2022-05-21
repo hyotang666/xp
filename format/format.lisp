@@ -209,6 +209,27 @@
 	      (next-directive1 control-string :start j :end end)
 	      0)))))))
 
+(declaim (ftype (function ((mod #.array-total-size-limit) (mod #.array-total-size-limit))
+			  (values t &optional))
+		literal))
+(defun literal (start end &aux (start start))
+  "Return an expression that write literal string."
+  (let ((forms
+	  (loop :for s = start :then (1+ sub-end)
+		:for next-newline = (position #\newline *string* :start s :end end)
+		:for sub-end = (or next-newline end)
+		:when (< s sub-end)
+		:collect (if (= s (1- sub-end))
+			   `(pxp.stream:write-char++ ,(ref *string* s) xp)
+			   `(pxp.stream:write-string++ ,(subseq *string* s sub-end) xp
+					    ,0 ,(- sub-end s)))
+		:when (null next-newline)
+		  :do (loop-finish)
+		:collect `(pxp.stream:pprint-newline+ :unconditional xp))))
+    (if (null (cdr forms))
+        (car forms)
+	(cons 'progn forms))))
+
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   (mod #.array-total-size-limit))
 			  (values list &optional))
@@ -361,26 +382,6 @@
 (defmacro maybe-bind (doit? var val &body code)
   `(let ((body (progn ,@ code)))
      (if ,doit? (make-binding ,var ,val body) body)))
-
-(declaim (ftype (function ((mod #.array-total-size-limit) (mod #.array-total-size-limit))
-			  (values t &optional))
-		literal))
-(defun literal (start end &aux (start start))
-  (let ((forms
-	  (loop :for s = start :then (1+ sub-end)
-		:for next-newline = (position #\newline *string* :start s :end end)
-		:for sub-end = (or next-newline end)
-		:when (< s sub-end)
-		:collect (if (= s (1- sub-end))
-			   `(pxp.stream:write-char++ ,(ref *string* s) xp)
-			   `(pxp.stream:write-string++ ,(subseq *string* s sub-end) xp
-					    ,0 ,(- sub-end s)))
-		:when (null next-newline)
-		  :do (loop-finish)
-		:collect `(pxp.stream:pprint-newline+ :unconditional xp))))
-    (if (null (cdr forms))
-        (car forms)
-	(cons 'progn forms))))
 
 ;This is available for putting on #".
 
