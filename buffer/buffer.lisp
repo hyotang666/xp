@@ -127,9 +127,10 @@
 
 ;;;; BUFFER-PTR
 
+(declaim (ftype (function (buffer) (values pxp.adjustable-vector:index &optional))
+		total-position<-buffer-position))
 (defun total-position<-buffer-position (buffer)
-  (the pxp.adjustable-vector:index
-       (+ (buffer-ptr buffer) (buffer-offset buffer))))
+  (+ (buffer-ptr buffer) (buffer-offset buffer)))
 
 ;We don't use adjustable vectors or any of that, because we seldom have
 ;to actually extend and non-adjustable vectors are a lot faster in
@@ -194,6 +195,9 @@ Each character is filtered by the function MODE."
 	  (the pxp.adjustable-vector:index (+ (charpos buffer) (buffer-ptr buffer)))
 	(buffer-ptr buffer) 0))
 
+(declaim (ftype (function (buffer &key (:end (or null pxp.adjustable-vector:index)))
+			  (values (or null pxp.adjustable-vector:index) &optional))
+		last-non-blank))
 (defun last-non-blank (buffer &key end)
   (pxp.adjustable-vector:position #\space (the (pxp.adjustable-vector:adjustable-vector character)
 					       (buffer buffer))

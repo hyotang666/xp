@@ -12,6 +12,9 @@
     #:write+))
 (in-package :pxp.printer)
 
+(declaim (optimize speed))
+
+(declaim (type fixnum *current-length*))
 (defvar *current-length* 0
   "current position in logical block.")
 
@@ -112,12 +115,18 @@
 	     ,@ body nil)))
      (pxp.stream:decode-stream-arg ,stream-symbol)))
 
+(declaim (ftype (function (pxp.stream:xp-structure vector) (values null &optional))
+		pretty-vector))
 (defun pretty-vector (xp v)
   (pprint-logical-block (xp nil :prefix "#(" :suffix ")")
     (let ((end (length v)) (i 0))
       (when (plusp end)
 	(loop (pprint-pop)
-	      (write+ (aref v i) xp)
+	      (write+ (locally
+			#+sbcl ; due to upgraded element type is unknown.
+			(declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+			(aref v i))
+		      xp)
 	      (when (= (incf i) end)
 		(return nil))
 	      (pxp.stream:write-char++ #\space xp)
@@ -134,6 +143,7 @@
 		       (spot (nthcdr slice indices)) ; to avoid inner looping.
 		       (i 0)
 		       (*prefix* "("))
+		   (declare ((mod #.array-total-size-limit) end i))
 		   (when (plusp end)
 		     (loop (pprint-pop)
 			   (setf (car spot) i)
@@ -144,13 +154,19 @@
 			     (return nil))
 			   (pxp.stream:write-char++ #\space xp)
 			   (pxp.stream:pprint-newline+ (if (= slice bottom) :fill :linear) xp)))))))
+      (declare (ftype (function ((mod #.array-total-size-limit)) (values null &optional))
+		      pretty-slice))
       (pretty-slice 0))))
 
 (defun pretty-array (xp array)
   (cond ((vectorp array) (pretty-vector xp array))
 	((zerop (array-rank array))
 	 (pxp.stream:write-string++ "#0A " xp 0 4)
-	 (write+ (aref array) xp))
+	 (write+ (locally
+		   #+sbcl ; Due to element-type is unknown.
+		   (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+		   (aref array))
+		 xp))
 	(T (pretty-non-vector xp array))))
 
 (defun write+ (object xp)
@@ -164,13 +180,13 @@
 		         (pxp.dispatch:get-printer object pxp.dispatch:*print-pprint-dispatch*)
 			 nil))
 	    type)
-	(cond (printer (funcall printer xp object))
+	(cond (printer (funcall (coerce printer 'function) xp object))
 	      ((pxp.stream:maybe-print-fast xp object))
 	      ((and *print-pretty*
 		    (symbolp (setq type (type-of object)))
 		    (setq printer (get type 'structure-printer))
 		    (not (eq printer :none)))
-	       (funcall printer xp object))
+	       (funcall (coerce printer 'function) xp object))
 	      ((and *print-pretty* *print-array* (arrayp object)
 		    (not (stringp object)) (not (bit-vector-p object))
 		    (not (pxp.dispatch:structure-type-p (type-of object))))
@@ -206,6 +222,8 @@
 		     ((:lines pxp.stream:*print-lines*) pxp.stream:*print-lines*)
 		     ((:miser-width pxp.stream:*print-miser-width*)
 		      pxp.stream:*print-miser-width*))
+  #+sbcl
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (setq stream (pxp.stream:decode-stream-arg stream))
   (cond ((or (pxp.stream:xp-structure-p stream) *print-pretty*)
 	 (basic-write object stream))
@@ -266,22 +284,28 @@
 (locally
   ;; To muffle &OPTIONAL and &KEY is used at once.
   #+sbcl (declare (sb-ext:muffle-conditions style-warning))
+  (declaim (ftype (function (string &optional pxp.stream::stream-designator
+				    &key (:start (mod #.array-total-size-limit))
+				    (:end (or null (mod #.array-total-size-limit)))))
+		  write-string write-line))
 (defun write-string (string &optional (stream *standard-output*)
-		     &key (start 0) (end (length string)))
-  (setq stream (pxp.stream:decode-stream-arg stream))
-  (if (pxp.stream:xp-structure-p stream)
+			    &key (start 0) end)
+  (let ((stream (pxp.stream:decode-stream-arg stream))
+	(end (or end (length string))))
+    (if (pxp.stream:xp-structure-p stream)
       (pxp.stream:write-string+ string stream start end)
       (cl:write-string string stream :start start :end end))
-  string)
+    string))
 
 (defun write-line (string &optional (stream *standard-output*)
-		   &key (start 0) (end (length string)))
-  (setq stream (pxp.stream:decode-stream-arg stream))
-  (if (pxp.stream:xp-structure-p stream)
+			  &key (start 0) end)
+  (let ((stream (pxp.stream:decode-stream-arg stream))
+	(end (or end (length string))))
+    (if (pxp.stream:xp-structure-p stream)
       (progn (pxp.stream:write-string+ string stream start end)
 	     (pxp.stream:pprint-newline+ :unconditional stream))
       (cl:write-line string stream :start start :end end))
-  string)
+    string))
 )
 
 (defun fresh-line (&optional (stream *standard-output*))

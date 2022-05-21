@@ -34,8 +34,12 @@
 	   ))
 (in-package :pxp.stream)
 
+(declaim (optimize speed))
+
 ;;;; CONFIGURATION VARIABLES.
 
+(declaim (type (or null (mod #.array-total-size-limit))
+	       *print-right-margin* *print-miser-width*))
 (defvar *print-right-margin* nil
   "+#/nil the right margin for pretty printing")
 
@@ -45,6 +49,7 @@
 (defvar *print-miser-width* 40.
   "+#/nil miser format starts when there is less than this width left")
 
+(declaim (type (mod #.array-total-size-limit) *default-right-margin*))
 (defvar *default-right-margin* 70.
   "controls default line length; must be a non-negative integer")
 
@@ -57,7 +62,7 @@
 (defvar *abbreviation-happened* nil
   "t if current thing being printed has been abbreviated.")
 
-(declaim (type (or null integer) *locating-circularities*))
+(declaim (type (or null (mod #.most-positive-fixnum)) *locating-circularities*))
 (defvar *locating-circularities* nil
   "Integer if making a first pass over things to identify circularities.
    Integer used as counter for #n= syntax.")
@@ -68,6 +73,15 @@
   '(member nil :up :down :cap0 :cap1 :capw))
 
 ;;;; XP-STRUCTURE
+
+(define-compiler-macro char-mode-counter (xp)
+  `(the (mod #.array-total-size-limit) (slot-value ,xp 'char-mode-counter)))
+
+(define-compiler-macro linel (xp)
+  `(the (mod #.array-total-size-limit) (slot-value ,xp 'linel)))
+
+(define-compiler-macro line-no (xp)
+  `(the (mod #.array-total-size-limit) (slot-value ,xp 'line-no)))
 
 (defclass xp-structure (trivial-gray-streams:fundamental-character-output-stream
 			 pxp.buffer:buffer pxp.stack:stack pxp.queue:queue)
@@ -87,6 +101,8 @@
 
 ;;;; CONSTRUCTOR
 
+(declaim (ftype (function (&optional stream) (values (or null (mod #.array-total-size-limit)) &optional))
+		output-width))
 ;default (bad) definitions for the non-portable functions
 
 #-(or :franz-inc)(eval-when (:execute :load-toplevel :compile-toplevel)
@@ -117,22 +133,22 @@
 
 (defmethod print-object ((xp xp-structure) s)
   (print-unreadable-object (xp s :type t :identity nil)
-    (cl:format s "stream ")
+    (funcall (formatter "stream ") s)
     (if (not (base-stream xp))
-        (cl:format s "not currently in use")
-        (cl:format s "outputting to ~S" (base-stream xp)))
+        (funcall (formatter "not currently in use") s)
+        (funcall (formatter "outputting to ~S") s (base-stream xp)))
     (when (base-stream xp)
       (pxp.buffer:show xp s)
       (when (not *describe-xp-streams-fully*) (cl:princ " ..." s))
       (when *describe-xp-streams-fully*
-        (cl:format s "~&   pos   _123456789_123456789_123456789_123456789")
-        (cl:format s "~&depth-in-blocks= ~D linel= ~D line-no= ~D line-limit= ~D"
+        (funcall (formatter "~&   pos   _123456789_123456789_123456789_123456789") s)
+        (funcall (formatter "~&depth-in-blocks= ~D linel= ~D line-no= ~D line-limit= ~D") s
                      (pxp.stack:depth-in-blocks xp) (linel xp) (line-no xp) (line-limit xp))
         (when (or (char-mode xp) (not (zerop (char-mode-counter xp))))
-          (cl:format s "~&char-mode= ~S char-mode-counter= ~D"
+          (funcall (formatter "~&char-mode= ~S char-mode-counter= ~D") s
                        (char-mode xp) (char-mode-counter xp)))
 	(pxp.stack:show-section-start xp s)
-        (cl:format s "~&linel= ~D" (linel xp))
+        (funcall (formatter "~&linel= ~D") s (linel xp))
 	(pxp.buffer:show-detail xp s)
 	(pxp.stack:show-detail xp s)
 	(pxp.queue:show xp s)
@@ -150,6 +166,8 @@
 			  (values character &optional))
 		handle-char-mode))
 (defun handle-char-mode (xp char)
+  #+sbcl ; due to type uncertainty about character or base-char.
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (ecase (char-mode xp)
     (:CAP0 (cond ((not (alphanumericp char)) char)
 		 (T (setf (char-mode xp) :DOWN) (char-upcase char))))
@@ -185,7 +203,11 @@
   (when prefix-string (write-string++ prefix-string xp 0 (length prefix-string)))
   (when (and (char-mode xp) on-each-line?)
     (setq prefix-string
-	  (pxp.buffer:prefix xp :rewind (length prefix-string))))
+	  (pxp.buffer:prefix xp :rewind
+			     (locally
+			       #+sbcl ; due to type uncertainty.
+			       (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+			       (length prefix-string)))))
   (pxp.stack:push-block-stack xp)
   (pxp.queue:enqueue xp :start-block nil
 		     :arg (if on-each-line? (cons suffix-string prefix-string) suffix-string)
@@ -306,10 +328,10 @@
 '(member :section :line-relative :section-relative :line))
 
 (declaim (ftype (function (tab-kind
-		   (integer 0 *)
-		   (integer 0 *)
-		   xp-structure)
-		  (values &optional))
+			    (unsigned-byte 32)
+			    (unsigned-byte 32)
+			    xp-structure)
+			  (values &optional))
 	pprint-tab+))
 (defun pprint-tab+ (kind colnum colinc xp)
   (let ((indented? nil) (relative? nil))
@@ -318,18 +340,24 @@
       (:line-relative (setq relative? T))
       (:section-relative (setq indented? T relative? T)))
     (let* ((current
-	     (if (not indented?)
-	         (pxp.buffer:line-position<-buffer-position xp)
-	         (- (pxp.buffer:total-position<-buffer-position xp) (pxp.stack:section-start xp))))
+	     (the pxp.adjustable-vector:index
+		  (if (not indented?)
+		    (pxp.buffer:line-position<-buffer-position xp)
+		    (- (pxp.buffer:total-position<-buffer-position xp)
+		       (pxp.stack:section-start xp)))))
 	   (new
-	     (if (zerop colinc)
-	         (if relative? (+ current colnum) (max colnum current))
-	         (cond (relative?
-			 (* colinc (floor (+ current colnum colinc -1) colinc)))
-		       ((> colnum current) colnum)
-		       (T (+ colnum
-			     (* colinc
-				(floor (+ current (- colnum) colinc) colinc)))))))
+	     (the pxp.adjustable-vector:index
+		  (cond
+		    ((zerop colinc)
+		     (if relative? (+ current colnum) (max colnum current)))
+		    (relative?
+		      (* colinc (floor (the (unsigned-byte 32) (+ current colnum colinc -1))
+				       colinc)))
+		    ((> colnum current) colnum)
+		    (T (+ colnum
+			  (* colinc
+			     (floor (the (unsigned-byte 32) (+ current (- colnum) colinc))
+				    colinc)))))))
 	   (length (- new current)))
       (when (plusp length)
 	(when (char-mode xp) (handle-char-mode xp #\space))
@@ -354,7 +382,8 @@
 	 (end (cond ((pxp.queue:fresh-newline-p xp Qentry) out-point)
 		    (last-non-blank (1+ last-non-blank))
 		    (T 0)))
-	 (line-limit-exit (and (line-limit xp) (not (> (line-limit xp) (line-no xp))))))
+	 (line-limit-exit (and (line-limit xp) (not (> (the pxp.adjustable-vector:index (line-limit xp))
+						       (line-no xp))))))
     (when line-limit-exit
       (setf (pxp.buffer:buffer-ptr xp) end)          ;truncate pending output.
       (write-string+++ " .." xp 0 3)
@@ -396,13 +425,16 @@
 		attempt-to-output))
 (defun attempt-to-output (xp force-newlines? flush-out?)
   (macrolet ((maybe-too-large (xp Qentry)
-              `(let ((limit (linel ,xp)))
-		 (when (eql (line-limit ,xp) (line-no ,xp)) ;prevents suffix overflow
-		   (decf limit 2) ;3 for " .." minus 1 for space (heuristic)
-		   (when (not (minusp (pxp.stack:prefix-stack-ptr ,xp)))
-		     (decf limit (pxp.stack:suffix-ptr ,xp))))
+              `(let ((limit (- (linel ,xp)
+			       (if (eql (line-limit ,xp) (line-no ,xp))
+				   (+ 2 (if (minusp (pxp.stack:prefix-stack-ptr ,xp))
+					  0
+					  (pxp.stack:suffix-ptr ,xp)))
+				   0))))
+		 (declare (pxp.adjustable-vector:index limit))
 		 (cond (Qend
-			(> (line-position<-total-position ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend))) limit))
+			(> (line-position<-total-position ,xp (pxp.queue:Qpos ,xp (+ ,Qentry Qend)))
+			   limit))
 		       ((or force-newlines? (pxp.buffer:too-large-p xp :max limit)) T)
 		       (T (return nil))))) ; wait until later to decide.
 	     (misering? (xp)
@@ -414,10 +446,10 @@
 	  (unless (misering? xp)
 	    (pxp.stack:set-indentation-prefix xp
 	      (case Qkind
-		(:block (+ (pxp.stack:initial-prefix-ptr xp) Qarg))
+		(:block (the fixnum (+ (pxp.stack:initial-prefix-ptr xp) (the fixnum Qarg))))
 		(T ; :current
-		  (+ (line-position<-total-position xp Qpos)
-		     Qarg))))))
+		  (the fixnum (+ (line-position<-total-position xp Qpos)
+				 (the fixnum Qarg))))))))
 	(:start-block
 	  (cond ((maybe-too-large xp ptr)
 		 (pxp.stack:push-prefix-stack xp)
@@ -429,7 +461,7 @@
 		   (cond ((not (listp arg)) (pxp.stack:set-suffix xp arg))
 			 ((car arg) (pxp.stack:set-suffix xp (car arg)))))
 		 (setf (pxp.stack:section-start-line xp) (line-no xp)))
-		(T (incf (pxp.queue:Qleft xp) Qoffset))))
+		(T (incf (the pxp.adjustable-vector:index (pxp.queue:Qleft xp)) Qoffset))))
 	(:end-block (pxp.stack:pop-prefix-stack xp) )
 	(T ; :newline
 	  (when (case Qkind
@@ -529,6 +561,7 @@
 	      (and (symbolp object)	;Reader takes care of sharing.
 		   (or (null *print-gensym*) (symbol-package object))))
     (let ((id (gethash object *circularity-hash-table*)))
+      (declare ((or null fixnum) id))
       (if *locating-circularities*
 	  (cond ((null id)	;never seen before
 		 (when *parents* (push object *parents*))

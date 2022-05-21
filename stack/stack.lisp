@@ -56,6 +56,9 @@
 (deftype prefix-stack-entry ()
   '(or prefix-ptr suffix-ptr non-blank-prefix-ptr initial-prefix-ptr section-start-line))
 
+(define-compiler-macro depth-in-blocks (stack)
+  `(the pxp.adjustable-vector:index (slot-value ,stack 'depth-in-blocks)))
+
 (define-compiler-macro block-stack-ptr (stack)
   `(the pxp.adjustable-vector:index (slot-value ,stack 'block-stack-ptr)))
 
@@ -67,7 +70,6 @@
 
 (defclass stack ()
   ((depth-in-blocks
-     :initform nil :initarg :depth-in-blocks
      :accessor depth-in-blocks
      :documentation "Number of logical blocks at QRIGHT that are started but not ended.")
    (block-stack
@@ -121,11 +123,11 @@
 (defmacro non-blank-prefix-ptr (stack)
   `(the fixnum (pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 2)))))
 (defmacro initial-prefix-ptr (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 3))))
+  `(the pxp.adjustable-vector:index (pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 3)))))
 (defmacro section-start-line (stack)
-  `(pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 4))))
+  `(the pxp.adjustable-vector:index (pxp.adjustable-vector:ref (prefix-stack ,stack) (the pxp.adjustable-vector:index (+ (prefix-stack-ptr ,stack) 4)))))
 (defmacro section-start (stack)
-  `(pxp.adjustable-vector:ref (block-stack ,stack) (block-stack-ptr ,stack)))
+  `(the pxp.adjustable-vector:index (pxp.adjustable-vector:ref (block-stack ,stack) (block-stack-ptr ,stack))))
 
 (defmethod shared-initialize :after ((o stack) slot-names &key &allow-other-keys)
   (setf (depth-in-blocks o) 0
