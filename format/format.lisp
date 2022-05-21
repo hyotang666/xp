@@ -428,18 +428,19 @@
   #+sbcl ; Maybe due to &key.
   (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (let ((colon nil) (atsign nil) (params nil) (i start) j c)
-    (loop
-      (setq c (ref *string* i))
-      (cond ((or (char= c #\V) (char= c #\v)) (push (get-arg) params) (incf i))
-	    ((char= c #\#) (push (num-args) params) (incf i))
-	    ((char= c #\') (incf i) (push (ref *string* i) params) (incf i))
-	    ((char= c #\,) (push nil params))
-	    (T (setq j (position-not-in *string* "+-0123456789" :start i))
-	       (when (= i j)
-		 (return nil))
-	       (push (parse-integer *string* :start i :end j :radix 10.) params)
-	       (setq i j)))
-      (if (char= (ref *string* i) #\,) (incf i) (return nil)))
+    (loop (setq c (ref *string* i))
+	  (case c
+	    ((#\V #\v) (push (get-arg) params) (incf i))
+	    ((#\#) (push (num-args) params) (incf i))
+	    ((#\') (incf i) (push (ref *string* i) params) (incf i))
+	    ((#\,) (push nil params))
+	    (otherwise
+	      (setq j (position-not-in *string* "+-0123456789" :start i))
+	      (when (= i j)
+		(return nil))
+	      (push (parse-integer *string* :start i :end j :radix 10.) params)
+	      (setq i j)))
+	  (if (char= (ref *string* i) #\,) (incf i) (return nil)))
     (setq params (nreverse params))
     (do ((ps params (cdr ps))
 	 (ds defaults (cdr ds))
@@ -453,15 +454,14 @@
       (failed-to-compile 6 "Too many parameters" *string* i))
     (loop
       (setq c (ref *string* i))
-      (cond ((char= c #\:)
-	     (when colon
-	       (failed-to-compile 7 "Two colons specified" *string* i))
-	     (setq colon T))
-	    ((char= c #\@)
-	     (when atsign
-	       (failed-to-compile 8 "Two atsigns specified" *string* i))
-	     (setq atsign T))
-	    (T (return nil)))
+      (case c
+	((#\:) (when colon
+		 (failed-to-compile 7 "Two colons specified" *string* i))
+	       (setq colon T))
+	((#\@) (when atsign
+		 (failed-to-compile 8 "Two atsigns specified" *string* i))
+	       (setq atsign T))
+	(otherwise (return nil)))
       (incf i))
     (when (and colon nocolon)
       (failed-to-compile 9 "Colon not permitted" *string* i))
