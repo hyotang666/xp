@@ -27,8 +27,8 @@
        (defun ,name ,args
 	 (declare (fixnum ,@args))
 	 ,@body)
-       (setf (gethash (char-upcase ,char) *fn-table*) (function ,name))
-       (setf (gethash (char-downcase ,char) *fn-table*) (function ,name)))))
+       (setf (gethash (char-upcase ,char) *fn-table*) #',name)
+       (setf (gethash (char-downcase ,char) *fn-table*) #',name))))
 
 ;;;; CONDITION
 
@@ -245,8 +245,7 @@
 
 (declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
 (defun formatter-fn (*string* *default-package*)
-  (handler-case `(apply (function pxp.stream:call-with-xp-stream)
-			(function
+  (handler-case `(apply #'pxp.stream:call-with-xp-stream
 			  (lambda (xp &rest args)
 			    ,@(bind-initial
 				`((block top
@@ -256,7 +255,7 @@
 						 (*outer-end* 'top))
 					     (compile-format 0 (length *string*))))))
 			    (when ,(args)
-			      (copy-list ,(args))))) ;needed by symbolics.
+			      (copy-list ,(args)))) ;needed by symbolics.
 			s args)
     (failed-to-compile (c)
       (warn c)
@@ -267,9 +266,8 @@
   (formatter-fn string reader-package))
 
 (defmacro formatter (string)
-  `(function
-    (lambda (s &rest args)
-      (formatter-in-package ,string ,(package-name *package*)))))
+  `(lambda (s &rest args)
+     (formatter-in-package ,string ,(package-name *package*))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
@@ -385,9 +383,8 @@
 (defun format-string-reader (stream sub-char arg)
     (declare (ignore arg))
   (unread-char sub-char stream)
-  `(function
-    (lambda (s &rest args)
-      (formatter-in-package ,(read stream) ,(package-name *package*)))))
+  `(lambda (s &rest args)
+     (formatter-in-package ,(read stream) ,(package-name *package*))))
 
 
 ;This gets called with start pointing to the character after the ~ that
@@ -986,7 +983,7 @@
 	   `(eval-when (:execute :load-toplevel :compile-toplevel)
 	      (cl:defstruct ,name ,@ body)
 	      (defun ,xp-print-fn (xp obj)
-		(funcall (function ,printer) obj xp pxp.dispatch:*current-level*))
+		(funcall #',printer obj xp pxp.dispatch:*current-level*))
 	      (setf (get ',struct-name 'pxp.printer::structure-printer) #',xp-print-fn)
 	      ',(if (consp name) (car name) name)))
 	  ((and (not (safe-assoc :type name))
