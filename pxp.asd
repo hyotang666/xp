@@ -31,7 +31,8 @@
    (:module "pool" :pathname "pool"
 	    :components ((:file "pool")))
    (:module "stream" :pathname "stream"
+	    :depends-on ("buffer" "stack" "queue" "dispatch" "pool")
 	    :components ((:file "stream")))
-   (:file "xp-code" :depends-on ("buffer" "dispatch" "queue")))
+   (:file "xp-code" :depends-on ("buffer" "dispatch" "queue" "stream")))
   :in-order-to ((test-op (test-op "xp-test"))))
 
