@@ -332,11 +332,6 @@
 ;via an XP stream (See formatter).
 
 
-(defmethod trivial-gray-streams:stream-line-column ((output pxp.stream:xp-structure)) nil)
-(defmethod trivial-gray-streams:stream-write-char ((output pxp.stream:xp-structure) char)
-  (pxp.stream:write-char+ char output)
-  char)
-
 (locally
   ;; To muffle &OPTIONAL and &KEY is used at once.
   #+sbcl (declare (sb-ext:muffle-conditions style-warning))
@@ -373,19 +368,6 @@
 ;newlines wherever it might have to, when forcing the partial output
 ;out.  This is so that things will be in a consistent state if
 ;output continues to the stream later.
-
-(defmethod trivial-gray-streams:stream-finish-output ((output pxp.stream:xp-structure))
-  (pxp.stream:attempt-to-output output T T)
-  nil)
-
-(defmethod trivial-gray-streams:stream-force-output ((output pxp.stream:xp-structure))
-  (pxp.stream:attempt-to-output output T T)
-  nil)
-
-(defmethod trivial-gray-streams:stream-clear-output ((output pxp.stream:xp-structure))
-  (let ((pxp.stream:*locating-circularities* 0)) ;hack to prevent visible output
-    (pxp.stream:attempt-to-output output T T))
-  nil)
 
 ;note we are assuming that if a structure is defined using xp::defstruct,
 ;then its print-function (if any) will be defined using xp::print etc.

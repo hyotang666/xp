@@ -6,7 +6,6 @@
 	   ;;;; Configure
 	   #:*circularity-hash-table*
 	   #:*parents*
-	   #:*locating-circularities*
 	   #:*last-abbreviated-printing*
 	   #:*abbreviation-happened*
 	   *print-right-margin*
@@ -20,7 +19,6 @@
 	   #:pprint-indent+
 	   #:pprint-newline+
 	   #:pprint-tab+
-	   #:write-char+
 	   #:write-string+
 	   ;; DSL Macros.
 	   #:push-char-mode
@@ -58,6 +56,11 @@
 
 (defvar *abbreviation-happened* nil
   "t if current thing being printed has been abbreviated.")
+
+(declaim (type (or null integer) *locating-circularities*))
+(defvar *locating-circularities* nil
+  "Integer if making a first pass over things to identify circularities.
+   Integer used as counter for #n= syntax.")
 
 ;;;; TYPE
 
@@ -512,11 +515,6 @@
 (declaim (type list *parents*))
 (defvar *parents* nil "used when *print-shared* is nil")
 
-(declaim (type (or null integer) *locating-circularities*))
-(defvar *locating-circularities* nil
-  "Integer if making a first pass over things to identify circularities.
-   Integer used as counter for #n= syntax.")
-
 (declaim (ftype (function (xp-structure t boolean)
 			  (values (member nil :subsequent :first) &optional))
 		circularity-process))
@@ -635,3 +633,25 @@
                         (apply #'call-with-xp-stream
                                fn stream list))))))
           *result*))))
+
+;;;; STREAMS
+
+(defmethod trivial-gray-streams:stream-line-column ((output xp-structure)) nil)
+
+(defmethod trivial-gray-streams:stream-write-char ((output xp-structure) char)
+  (write-char+ char output)
+  char)
+
+(defmethod trivial-gray-streams:stream-finish-output ((output xp-structure))
+  (attempt-to-output output T T)
+  nil)
+
+(defmethod trivial-gray-streams:stream-force-output ((output xp-structure))
+  (attempt-to-output output T T)
+  nil)
+
+(defmethod trivial-gray-streams:stream-clear-output ((output xp-structure))
+  (let ((*locating-circularities* 0)) ;hack to prevent visible output
+    (attempt-to-output output T T))
+  nil)
+
