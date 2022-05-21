@@ -485,11 +485,11 @@
 			  (values (mod #.array-total-size-limit) &optional))
 		params-start))
 (defun directive-start (end) ;end points at characters after params
-  (loop
-    (setq end (position #\~ *string* :end end :from-end T))
-    (when (or (zerop end) (not (char= (ref *string* (1- end)) #\')))
-      (return end))
-    (decf end)))
+  (loop :for pos := (position #\~ *string* :end end :from-end T)
+	  :then (position #\~ *string* :end (1- pos) :from-end T)
+	:when (or (zerop pos)
+		  (not (char= #\' (ref *string* (1- pos)))))
+          :return pos))
 
 ;breaks things up at ~; directives.
 
