@@ -3,12 +3,32 @@
   (:export format formatter defstruct))
 (in-package :pxp.format)
 
+;;;; SPECIAL VARIABLES.
+
 (declaim (special *string* *used-args* *used-outer-args* *used-initial*
-		  *get-arg-carefully* *inner-end* *outer-end* *at-top*))
+		  *get-arg-carefully* *inner-end* *outer-end* *at-top*)
+	 (optimize speed)
+	 (string *string*))
+
+(defvar *xp-condition* 'failed-to-compile
+  "The default condition for ERR.")
+
+(defvar *format-string-cache* T)
+
+;;;; DSL
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   ;; The macro DEF-FORMAT-HANDLER needs this eval-when.
-  (defvar *fn-table* (make-hash-table) "used to access fns for commands"))
+  (defvar *fn-table* (make-hash-table) "used to access fns for commands. as { character:function }"))
+
+(defmacro def-format-handler (char args &body body)
+  (let ((name (intern (cl:format nil "FORMAT-~A" char) (find-package :pxp.format))))
+    `(eval-when (:execute :load-toplevel :compile-toplevel)
+       (defun ,name ,args
+	 (declare (fixnum ,@args))
+	 ,@body)
+       (setf (gethash (char-upcase ,char) *fn-table*) (function ,name))
+       (setf (gethash (char-downcase ,char) *fn-table*) (function ,name)))))
 
 ;;;; CONDITION
 
@@ -24,10 +44,7 @@
 		      output
 		      (error-message this)
 		      (control-string this)
-		      (1+ (error-point this))))))
-
-(defvar *xp-condition* 'failed-to-compile
-  "The default condition for ERR.")
+		      (1+ (the (unsigned-byte 8) (error-point this)))))))
 
 (defun failed-to-compile (id msg control-string i)
   (error (make-condition *xp-condition*
@@ -36,13 +53,23 @@
 			 :message msg
 			 :error-point i)))
 
-;; MEMO: FIXME(?) Seems to not be used. Should be removed?
-(defun position-in (set start)
-  (position-if #'(lambda (c) (find c set)) *string* :start start))
+;;;; UTILITIES.
 
+(defmacro ref (string index)
+  `(locally
+     #+sbcl
+     (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+     (char ,string ,index)))
+
+(declaim (ftype (function (string simple-string &key (:start (mod #.array-total-size-limit)))
+			  (values (or null (mod #.array-total-size-limit)) &optional))
+		position-not-in))
 (defun position-not-in (string set &key start)
-  (position-if-not #'(lambda (c) (find c set)) string :start start))
+  #+sbcl ; Due to upgraded element type is unknown.
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+  (position-if-not (lambda (c) (find c set)) string :start start))
 
+;;;;
 
 (declaim (ftype (function (string &key (:start (mod #.array-total-size-limit)))
 			  (values (mod #.array-total-size-limit) &optional))
@@ -54,7 +81,7 @@
 	       (cond
 	         ((null position)
 		  (failed-to-compile 1 "missing directive" control-string (1- start)))
-	         ((not (char= (aref control-string position) #\'))
+	         ((not (char= (ref control-string position) #\'))
 		  position)
 	         ((= (1+ position) end)
 		  (failed-to-compile 2 "No character after '" control-string position))
@@ -62,6 +89,21 @@
 		   (rec (position-not-in control-string "+-0123456789,Vv#:@" :start (+ 2 position)))))))
       (rec (position-not-in control-string "+-0123456789,Vv#:@" :start start)))))
 
+(declaim (ftype (function (string (mod #.array-total-size-limit))
+			  (values boolean &optional))
+		colonp))
+(defun colonp (control-string j) ;j points to directive name
+  (or (char= (ref control-string (1- j)) #\:)
+      (and (char= (ref control-string (1- j)) #\@)
+	   (char= (ref control-string (- j 2)) #\:))))
+
+(declaim (ftype (function (string (mod #.array-total-size-limit))
+			  (values boolean &optional))
+		atsignp))
+(defun atsignp (control-string j) ;j points to directive name
+  (or (char= (ref control-string (1- j)) #\@)
+      (and (char= (ref control-string (1- j)) #\:)
+	   (char= (ref control-string (- j 2)) #\@))))
 
 (declaim (ftype (function (string &key
 				  (:start (mod #.array-total-size-limit))
@@ -78,34 +120,18 @@
     (if (null i)
         (values nil nil)
         (let ((j (params-end control-string :start (1+ i))))
-	  (if (not (char= (aref control-string j) #\/))
+	  (if (not (char= (ref control-string j) #\/))
 	      (values i j)
 	      (values i (or (position #\/ control-string :start (1+ j) :end end)
 			    (failed-to-compile 3 "Matching / missing"
 					       control-string (position #\/ control-string :start start)))))))))
-
-(declaim (ftype (function (string (mod #.array-total-size-limit))
-			  (values boolean &optional))
-		colonp))
-(defun colonp (control-string j) ;j points to directive name
-  (or (char= (aref control-string (1- j)) #\:)
-      (and (char= (aref control-string (1- j)) #\@)
-	   (char= (aref control-string (- j 2)) #\:))))
-
-(declaim (ftype (function (string (mod #.array-total-size-limit))
-			  (values boolean &optional))
-		atsignp))
-(defun atsignp (control-string j) ;j points to directive name
-  (or (char= (aref control-string (1- j)) #\@)
-      (and (char= (aref control-string (1- j)) #\:)
-	   (char= (aref control-string (- j 2)) #\@))))
 
 (declaim (ftype (function (string) (values boolean &optional)) fancy-directives-p))
 (defun fancy-directives-p (control-string)
   (let ((end (length control-string)))
     (labels ((rec (i j)
                (when i
-                 (let ((c (aref control-string j)))
+                 (let ((c (ref control-string j)))
                    (if (or (find c "_Ii/Ww")
                            (and (find c ">Tt")
                                 (colonp control-string j)))
@@ -114,14 +140,143 @@
                          (next-directive1 control-string :start j :end end)))))))
       (multiple-value-call #'rec (next-directive1 control-string :start 0 :end end)))))
 
+(declaim (ftype (function () (values (eql init) &optional)) initial))
+(defun initial () (setq *used-initial* T) 'init)
+
+(defun make-binding (var value body)
+  `((let ((,var ,value)) ,@ body)))
+
+(declaim (ftype (function () (values (eql args) &optional)) args))
+(defun args () (setq *used-args* T) 'args)
+
+(defmacro bind-initial (&body code)
+  `(let* ((*used-initial* nil)
+	  (body (progn ,@ code)))
+     (if *used-initial* (make-binding 'init (args) body) body)))
+
+(declaim (ftype (function (string &key
+				  (:start (mod #.array-total-size-limit))
+				  (:end (mod #.array-total-size-limit)))
+			  (values (or null character)
+				  (or null (mod #.array-total-size-limit))
+				  (or null (mod #.array-total-size-limit))
+				  &optional))
+		next-directive))
+(defun next-directive (control-string &key start end)
+  "Return three values.
+1: Next directive character or nil.
+2: Start position of params i.e. tilda, or nil.
+3: End position of params, or nil."
+  (multiple-value-bind (i j) (next-directive1 control-string :start start :end end)
+    (if (null i)
+      ;; No directives in format control string.
+      (values nil nil nil)
+      ;; Format control string has directives.
+      (let* ((directive (ref control-string j))
+	     (close (cdr (assoc directive '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))))
+	(if (null close)
+	  ;; Single directive. e.g. ~A, ~S etc.
+	  (values directive i j)
+	  ;; Paired directives.
+	  (labels ((rec (ii k count)
+		     (cond
+		       ((null ii)
+		        (failed-to-compile 4 "No matching close directive" control-string j))
+		       ((char= (ref control-string k)
+			       directive)
+			;; Nest into.
+		        (multiple-value-call #'rec
+		          (next-directive1 control-string :start k :end end)
+		          (1+ count)))
+		       ((char= (ref control-string k) close)
+			;; Nest back.
+		        (if (minusp (1- count))
+			  ;; Got directive pair.
+		          (values directive i k)
+			  ;; Still not get its pair yet.
+		          (multiple-value-call #'rec
+		            (next-directive1 control-string :start k :end end)
+		            (1- count))))
+		       (t ;; Met single directive, ignore.
+			 (multiple-value-call #'rec
+		            (next-directive1 control-string :start k :end end)
+		            count)))))
+	    (declare (ftype (function ((or null (mod #.array-total-size-limit))
+				       (or null (mod #.array-total-size-limit))
+				       fixnum))
+			    rec))
+	    (multiple-value-call #'rec
+	      (next-directive1 control-string :start j :end end)
+	      0)))))))
+
+(declaim (ftype (function ((mod #.array-total-size-limit)
+			   (mod #.array-total-size-limit))
+			  (values list &optional))
+		compile-format))
+(defun compile-format (start end)
+  (let ((start start)
+	(result nil))
+    (prog (c i j fn)
+     L(multiple-value-setq (c i j) (next-directive *string* :start start :end end))
+      (when (if (null c) (< start end) (< start i))
+	(push (literal start (or i end)) result))
+      (when (null c) (return (nreverse result)))
+      (when (char= c #\newline)
+	(multiple-value-bind (colon atsign)
+	    (parse-params (1+ i) nil :nocolonatsign T)
+	  (when atsign (push `(pxp.stream:pprint-newline+ :unconditional xp) result))
+	  (incf j)
+	  (when (not colon)
+	    (setq j (locally
+		      #+sbcl
+		      (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+		      (position-if-not
+			(lambda (c) (or (char= c #\tab) (char= c #\space)))
+			*string* :start j :end end)))
+	    (when (null j) (setq j end)))
+	  (setq start j)
+	  (go L)))
+      (setq fn (gethash c *fn-table*))
+      (when (null fn) (failed-to-compile 5 "Unknown format directive" *string* j))
+      (incf j)
+      (push (funcall (coerce fn 'function) (1+ i) j) result)
+      (setq start j)
+      (go L))))
+
+(declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
+(defun formatter-fn (*string* *default-package*)
+  (handler-case `(apply (function pxp.stream:call-with-xp-stream)
+			(function
+			  (lambda (xp &rest args)
+			    ,@(bind-initial
+				`((block top
+					 ,@(let ((*get-arg-carefully* nil)
+						 (*at-top* t)
+						 (*inner-end* 'top)
+						 (*outer-end* 'top))
+					     (compile-format 0 (length *string*))))))
+			    (when ,(args)
+			      (copy-list ,(args))))) ;needed by symbolics.
+			s args)
+    (failed-to-compile (c)
+      (warn c)
+      `(let ((*string* ,*string*))
+	 (apply #'format s *string* args)))))
+
+(defmacro formatter-in-package (string reader-package)
+  (formatter-fn string reader-package))
+
+(defmacro formatter (string)
+  `(function
+    (lambda (s &rest args)
+      (formatter-in-package ,string ,(package-name *package*)))))
+
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
 (defun maybe-compile-format-string (string force-fn?)
   (if (not (or force-fn? (fancy-directives-p string)))
       string
       (eval `(formatter ,string))))
-
-(defvar *format-string-cache* T)
 
 (declaim (ftype (function ((or string function) boolean)
 			  (values (or string function) &optional))
@@ -152,7 +307,7 @@
 	   (when (stringp string-or-fn)
 	     (setq string-or-fn (process-format-string string-or-fn nil)))
 	   (cond ((not (stringp string-or-fn))
-		  (apply string-or-fn stream args))
+		  (apply (coerce string-or-fn 'function) stream args))
 		 ((pxp.stream:xp-structure-p stream)
 		  (apply #'using-format stream string-or-fn args))
 		 (T (apply #'cl:format stream string-or-fn args)))
@@ -164,13 +319,6 @@
 ;marking the command.  End points to the first character after the
 ;command.  This includes the matching end command for paired commands.
 
-(defmacro def-format-handler (char args &body body)
-  (let ((name (intern (cl:format nil "FORMAT-~A" char) (find-package :pxp.format))))
-    `(eval-when (:execute :load-toplevel :compile-toplevel)
-       (defun ,name ,args ,@ body)
-       (setf (gethash (char-upcase ,char) *fn-table*) (function ,name))
-       (setf (gethash (char-downcase ,char) *fn-table*) (function ,name)))))
-
 ;Definitions of the forms used in the code created by PARSE.
 ;Note these functions assume the stream is in the var XP and is an xp stream,
 
@@ -179,20 +327,8 @@
 ;Note this uses args, but only when actually binding
 
 
-(declaim (ftype (function () (values (eql init) &optional)) initial))
-(defun initial () (setq *used-initial* T) 'init)
-
-(defmacro bind-initial (&body code)
-  `(let* ((*used-initial* nil)
-	  (body (progn ,@ code)))
-     (if *used-initial* (make-binding 'init (args) body) body)))
-
 ; ARGS holds the current argument list
 ;The val bound to args must always be computed (to use it up) even if args is not used.
-
-
-(declaim (ftype (function () (values (eql args) &optional)) args))
-(defun args () (setq *used-args* T) 'args)
 
 (defmacro bind-args (doit? val &body code)
   (if (eq doit? T)
@@ -221,9 +357,6 @@
   `(let ((body (progn ,@ code)))
      (if ,doit? (make-binding ,var ,val body) body)))
 
-(defun make-binding (var value body)
-  `((let ((,var ,value)) ,@ body)))
-
 (declaim (ftype (function ((mod #.array-total-size-limit) (mod #.array-total-size-limit))
 			  (values t &optional))
 		literal))
@@ -234,7 +367,7 @@
 		:for sub-end = (or next-newline end)
 		:when (< s sub-end)
 		:collect (if (= s (1- sub-end))
-			   `(pxp.stream:write-char++ ,(aref *string* s) xp)
+			   `(pxp.stream:write-char++ ,(ref *string* s) xp)
 			   `(pxp.stream:write-string++ ,(subseq *string* s sub-end) xp
 					    ,0 ,(- sub-end s)))
 		:when (null next-newline)
@@ -248,7 +381,6 @@
 
 (defvar *default-package*)
 
-
 (declaim (ftype (function (stream character t) (values cons &optional)) format-string-reader))
 (defun format-string-reader (stream sub-char arg)
     (declare (ignore arg))
@@ -257,64 +389,6 @@
     (lambda (s &rest args)
       (formatter-in-package ,(read stream) ,(package-name *package*)))))
 
-(defmacro formatter-in-package (string reader-package)
-  (formatter-fn string reader-package))
-
-(defmacro formatter (string)
-  `(function
-    (lambda (s &rest args)
-      (formatter-in-package ,string ,(package-name *package*)))))
-
-
-(declaim (ftype (function (string &key
-				  (:start (mod #.array-total-size-limit))
-				  (:end (mod #.array-total-size-limit)))
-			  (values (or null character)
-				  (or null (mod #.array-total-size-limit))
-				  (or null (mod #.array-total-size-limit))
-				  &optional))
-		next-directive))
-(defun next-directive (control-string &key start end)
-  "Return three values.
-1: Next directive character or nil.
-2: Start position of params i.e. tilda, or nil.
-3: End position of params, or nil."
-  (multiple-value-bind (i j) (next-directive1 control-string :start start :end end)
-    (if (null i)
-      ;; No directives in format control string.
-      (values nil nil nil)
-      ;; Format control string has directives.
-      (let* ((directive (aref control-string j))
-	     (close (cdr (assoc directive '((#\( . #\)) (#\[ . #\]) (#\< . #\>) (#\{ . #\}))))))
-	(if (null close)
-	  ;; Single directive. e.g. ~A, ~S etc.
-	  (values directive i j)
-	  ;; Paired directives.
-	  (labels ((rec (ii k count)
-		     (cond
-		       ((null ii)
-		        (failed-to-compile 4 "No matching close directive" control-string j))
-		       ((char= (aref control-string k) directive)
-			;; Nest into.
-		        (multiple-value-call #'rec
-		          (next-directive1 control-string :start k :end end)
-		          (1+ count)))
-		       ((char= (aref control-string k) close)
-			;; Nest back.
-		        (if (minusp (1- count))
-			  ;; Got directive pair.
-		          (values directive i k)
-			  ;; Still not get its pair yet.
-		          (multiple-value-call #'rec
-		            (next-directive1 control-string :start k :end end)
-		            (1- count))))
-		       (t ;; Met single directive, ignore.
-			 (multiple-value-call #'rec
-		            (next-directive1 control-string :start k :end end)
-		            count)))))
-	    (multiple-value-call #'rec
-	      (next-directive1 control-string :start j :end end)
-	      0)))))))
 
 ;This gets called with start pointing to the character after the ~ that
 ;starts a command.  Defaults, is a list of default values for the
@@ -333,7 +407,6 @@
 
 (defun num-args () `(length ,(args)))
 
-
 (declaim (ftype (function ((mod #.array-total-size-limit)
 			   list
 			   &key (:max (or null (integer 0 *)))
@@ -344,19 +417,21 @@
 		parse-params))
 (defun parse-params (start defaults &key (max (length defaults))
 		     (nocolon nil) (noatsign nil) (nocolonatsign nil))
+  #+sbcl ; Maybe due to &key.
+  (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
   (let ((colon nil) (atsign nil) (params nil) (i start) j c)
     (loop
-      (setq c (aref *string* i))
+      (setq c (ref *string* i))
       (cond ((or (char= c #\V) (char= c #\v)) (push (get-arg) params) (incf i))
 	    ((char= c #\#) (push (num-args) params) (incf i))
-	    ((char= c #\') (incf i) (push (aref *string* i) params) (incf i))
+	    ((char= c #\') (incf i) (push (ref *string* i) params) (incf i))
 	    ((char= c #\,) (push nil params))
 	    (T (setq j (position-not-in *string* "+-0123456789" :start i))
 	       (when (= i j)
 		 (return nil))
 	       (push (parse-integer *string* :start i :end j :radix 10.) params)
 	       (setq i j)))
-      (if (char= (aref *string* i) #\,) (incf i) (return nil)))
+      (if (char= (ref *string* i) #\,) (incf i) (return nil)))
     (setq params (nreverse params))
     (do ((ps params (cdr ps))
 	 (ds defaults (cdr ds))
@@ -366,10 +441,10 @@
 		  ((not (consp (car ps))) (car ps))
 		  (T `(cond (,(car ps)) (T ,(car ds)))))
 	    nps))
-    (when (and max (< max (length params)))
+    (when (and max (< max (list-length params)))
       (failed-to-compile 6 "Too many parameters" *string* i))
     (loop
-      (setq c (aref *string* i))
+      (setq c (ref *string* i))
       (cond ((char= c #\:)
 	     (when colon
 	       (failed-to-compile 7 "Two colons specified" *string* i))
@@ -389,58 +464,6 @@
     (values colon atsign params)))
 
 
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   (mod #.array-total-size-limit))
-			  (values list &optional))
-		compile-format))
-(defun compile-format (start end)
-  (let ((start start)
-	(result nil))
-    (prog (c i j fn)
-     L(multiple-value-setq (c i j) (next-directive *string* :start start :end end))
-      (when (if (null c) (< start end) (< start i))
-	(push (literal start (or i end)) result))
-      (when (null c) (return (nreverse result)))
-      (when (char= c #\newline)
-	(multiple-value-bind (colon atsign)
-	    (parse-params (1+ i) nil :nocolonatsign T)
-	  (when atsign (push `(pxp.stream:pprint-newline+ :unconditional xp) result))
-	  (incf j)
-	  (when (not colon)
-	    (setq j (position-if-not
-		      #'(lambda (c)
-			  (or (char= c #\tab) (char= c #\space)))
-		      *string* :start j :end end))
-	    (when (null j) (setq j end)))
-	  (setq start j)
-	  (go L)))
-      (setq fn (gethash c *fn-table*))
-      (when (null fn) (failed-to-compile 5 "Unknown format directive" *string* j))
-      (incf j)
-      (push (funcall fn (1+ i) j) result)
-      (setq start j)
-      (go L))))
-
-(declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
-(defun formatter-fn (*string* *default-package*)
-  (handler-case `(apply (function pxp.stream:call-with-xp-stream)
-			(function
-			  (lambda (xp &rest args)
-			    ,@(bind-initial
-				`((block top
-					 ,@(let ((*get-arg-carefully* nil)
-						 (*at-top* t)
-						 (*inner-end* 'top)
-						 (*outer-end* 'top))
-					     (compile-format 0 (length *string*))))))
-			    (when ,(args)
-			      (copy-list ,(args))))) ;needed by symbolics.
-			s args)
-    (failed-to-compile (c)
-      (warn c)
-      `(let ((*string* ,*string*))
-	 (apply #'format s *string* args)))))
-
 ;The business with the catch above allows many (formatter "...") errors to be
 ;reported in a file without stopping the compilation of the file.
 
@@ -456,7 +479,7 @@
 (defun directive-start (end) ;end points at characters after params
   (loop
     (setq end (position #\~ *string* :end end :from-end T))
-    (when (or (zerop end) (not (char= (aref *string* (1- end)) #\')))
+    (when (or (zerop end) (not (char= (ref *string* (1- end)) #\')))
       (return end))
     (decf end)))
 
@@ -483,9 +506,10 @@
 		num-args-in-args))
 (defun num-args-in-args (start &optional (errorp nil))
   (let ((n 0) (i (1- start)) c)
+    (declare ((mod #.array-total-size-limit) n))
     (loop
       (setq i (position-not-in *string* "+-0123456789," :start (1+ i)))
-      (setq c (aref *string* i))
+      (setq c (ref *string* i))
       (cond ((or (char= c #\V) (char= c #\v)) (incf n))
 	    ((char= c #\#)
 	     (when errorp
@@ -507,7 +531,7 @@
 		      *default-package*)))
 	   (name-start (cond ((null colon-pos) whole-name-start)
 			     ((and (< colon-pos (1- end))
-				   (char= #\: (aref *string* (1+ colon-pos))))
+				   (char= #\: (ref *string* (1+ colon-pos))))
 			      (+ colon-pos 2))
 			     (T (1+ colon-pos))))
 	   (fn (intern (string-upcase (subseq *string* name-start (1- end))) pkg)))
@@ -519,6 +543,27 @@
 			      params)))
 	    `(let ,(mapcar #'list vars params)
 	       (funcall (symbol-function ',fn) xp ,(get-arg) ,colon ,atsign ,@ vars)))))))
+
+(defun using-format (xp string &rest args)
+  (let ((result (apply #'cl:format nil string args)))
+    (declare (string result))
+    (pxp.stream:write-string+ result xp 0 (length result))))
+
+(defun simple-directive (start end)
+  (declare (fixnum start end))
+  (let ((n (num-args-in-args start)))
+    (if n `(using-format xp ,(subseq *string* (1- start) end)
+			 ,@ (copy-tree (make-list (1+ n) :initial-element (get-arg))))
+	(multiple-value-bind (colon atsign params)
+	    (parse-params start nil :max 8)
+	  (let* ((arg-str (subseq "v,v,v,v,v,v,v,v" 0
+				  (max 0 (1- (* 2 (length params))))))
+		 (str (concatenate 'string "~"
+				   arg-str
+				   (if colon ":" "")
+				   (if atsign "@" "")
+				   (subseq *string* (1- end) end))))
+	    `(using-format xp ,str ,@ params ,(get-arg)))))))
 
 (def-format-handler #\A (start end)
   (if (not (= end (1+ start)))
@@ -550,26 +595,49 @@
 (def-format-handler #\G (start end) (simple-directive start end))
 (def-format-handler #\$ (start end) (simple-directive start end))
 
-(defun simple-directive (start end)
-  (let ((n (num-args-in-args start)))
-    (if n `(using-format xp ,(subseq *string* (1- start) end)
-			 ,@ (copy-tree (make-list (1+ n) :initial-element (get-arg))))
-	(multiple-value-bind (colon atsign params)
-	    (parse-params start nil :max 8)
-	  (let* ((arg-str (subseq "v,v,v,v,v,v,v,v" 0
-				  (max 0 (1- (* 2 (length params))))))
-		 (str (concatenate 'string "~"
-				   arg-str
-				   (if colon ":" "")
-				   (if atsign "@" "")
-				   (subseq *string* (1- end) end))))
-	    `(using-format xp ,str ,@ params ,(get-arg)))))))
-
-(defun using-format (xp string &rest args)
-  (let ((result (apply #'cl:format nil string args)))
-    (pxp.stream:write-string+ result xp 0 (length result))))
-
 ;Format directives that get open coded "P%&~|T*?^"
+
+(declaim (ftype (function (list list)
+			  (values (mod #.array-total-size-limit)
+				  (mod #.array-total-size-limit)
+				  &optional))
+		tail-pos))
+(defun tail-pos (list some-tail)
+  (block outer
+    (do ((n 0 (1+ n))
+	 (L list (cdr L)))
+	(nil)
+      (do ((m n (1- m))
+	   (ST some-tail (cdr ST)))
+	  (nil)
+	  (declare (fixnum m))
+	(when (minusp m)
+	  (return nil))
+	(when (eq ST L)
+	  (return-from outer (values m n)))))))
+
+(declaim (ftype (function ((mod #.array-total-size-limit)
+			   list list)
+			  (values list &optional))
+		backup-to))
+(defun backup-to (num list some-tail)
+  (if (not pxp.stream:*circularity-hash-table*)
+      (nthcdr num list)
+      (multiple-value-bind (pos share) (tail-pos list some-tail)
+	  (declare (ignore pos))
+	(if (not (< num share))
+	    (nthcdr num list)
+	    (do ((L (nthcdr num list) (cdr L))
+		 (n (- share num) (1- n))
+		 (R nil (cons (car L) R)))
+		((zerop n) (nreconc R L))
+		(declare (fixnum n)))))))
+
+(declaim (ftype (function ((mod #.array-total-size-limit) list list)
+			  (values list &optional))
+		backup-in-list))
+(defun backup-in-list (num list some-tail)
+  (backup-to (- (tail-pos list some-tail) num) list some-tail))
 
 (def-format-handler #\P (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil)
@@ -579,11 +647,13 @@
 	`(when (not (eql ,arg 1))
 	   (pxp.stream:write-char++ #\s XP))))))
 
-(def-format-handler #\% (start end) (declare (ignore end))
-  (multiple-newlines start :unconditional))
-
-(def-format-handler #\& (start end) (declare (ignore end))
-  (multiple-newlines start :fresh))
+(declaim (ftype (function (stream t (mod #.most-positive-fixnum))
+			  (values null &optional))
+		multiple-newlines1))
+(defun multiple-newlines1 (xp kind num)
+  (loop :for i :of-type fixnum :below num
+	:do (pxp.stream:pprint-newline+ kind xp)
+	    (setq kind :unconditional)))
 
 (defun multiple-newlines (start kind)
   (multiple-value-bind (colon atsign params)
@@ -593,16 +663,17 @@
         `(pxp.stream:pprint-newline+ ,kind xp)
 	`(multiple-newlines1 xp ,kind ,(car params)))))
 
-(defun multiple-newlines1 (xp kind num)
-  (loop :repeat num
-	:do (pxp.stream:pprint-newline+ kind xp)
-	    (setq kind :unconditional)))
+(def-format-handler #\% (start end) (declare (ignore end))
+  (multiple-newlines start :unconditional))
 
-(def-format-handler #\| (start end) (declare (ignore end))
-  (multiple-chars start #.(aref (cl:format nil "~|") 0)))
+(def-format-handler #\& (start end) (declare (ignore end))
+  (multiple-newlines start :fresh))
 
-(def-format-handler #\~ (start end) (declare (ignore end))
-  (multiple-chars start #\~))
+(declaim (ftype (function (stream fixnum character)
+			  (values null &optional))
+		multiple-chars1))
+(defun multiple-chars1 (xp num char)
+  (loop :repeat num :do (pxp.stream:write-char++ char xp)))
 
 (defun multiple-chars (start char)
   (multiple-value-bind (colon atsign params)
@@ -612,8 +683,11 @@
         `(pxp.stream:write-char++ ,char xp)
 	`(multiple-chars1 xp ,(car params) ,char))))
 
-(defun multiple-chars1 (xp num char)
-  (loop :repeat num :do (pxp.stream:write-char++ char xp)))
+(def-format-handler #\| (start end) (declare (ignore end))
+  (multiple-chars start #.(ref (cl:format nil "~|") 0)))
+
+(def-format-handler #\~ (start end) (declare (ignore end))
+  (multiple-chars start #\~))
 
 (def-format-handler #\T (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign params) (parse-params start '(1 1))
@@ -638,50 +712,12 @@
 
 ;fancy stuff here, so will not get spurious indications of circularity.
 
-(defun backup-in-list (num list some-tail)
-  (backup-to (- (tail-pos list some-tail) num) list some-tail))
-
-
-(declaim (ftype (function ((mod #.array-total-size-limit)
-			   list list)
-			  (values list &optional))
-		backup-to))
-(defun backup-to (num list some-tail)
-  (if (not pxp.stream:*circularity-hash-table*)
-      (nthcdr num list)
-      (multiple-value-bind (pos share) (tail-pos list some-tail)
-	  (declare (ignore pos))
-	(if (not (< num share))
-	    (nthcdr num list)
-	    (do ((L (nthcdr num list) (cdr L))
-		 (n (- share num) (1- n))
-		 (R nil (cons (car L) R)))
-		((zerop n) (nreconc R L)))))))
-
 ;because of backup-to, a prefix of some-tail may have been copied (in which
 ;case it cannot share anything with list), but there is a cons in some-tail
 ;that is in list.  This can be used to determine the position of some-tail
 ;relative to list.  However, we have to be careful, because they both could
 ;be cdr recursive.
 
-
-(declaim (ftype (function (list list)
-			  (values (mod #.array-total-size-limit)
-				  (mod #.array-total-size-limit)
-				  &optional))
-		tail-pos))
-(defun tail-pos (list some-tail)
-  (block outer
-    (do ((n 0 (1+ n))
-	 (L list (cdr L)))
-	(nil)
-      (do ((m n (1- m))
-	   (ST some-tail (cdr ST)))
-	  (nil)
-	(when (minusp m)
-	  (return nil))
-	(when (eq ST L)
-	  (return-from outer (values m n)))))))
 
 (def-format-handler #\? (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign) (parse-params start nil :nocolon t)
@@ -691,6 +727,17 @@
 	`(let ((fn (process-format-string ,(get-arg) T)))
 	   (setq args (apply fn xp ,(args)))))))
 
+(declaim (ftype (function ((mod #.array-total-size-limit)
+			   &optional
+			   (or null (mod #.array-total-size-limit))
+			   (or null (mod #.array-total-size-limit)))
+			  (values boolean &optional))
+		do-complex-^-test))
+(defun do-complex-^-test (a1 &optional (a2 nil) (a3 nil))
+  (cond (a3 (and (<= a1 a2) (<= a2 a3)))
+	(a2 (= a1 a2))
+	(t (= 0 a1))))
+
 (def-format-handler #\^ (start end) (declare (ignore end))
   (multiple-value-bind (colon atsign params)
       (parse-params start nil :max 3 :noatsign t)
@@ -698,11 +745,6 @@
     `(when ,(cond ((null params) `(null ,(if colon `(cdr ,(outer-args)) (args))))
 		  (t `(do-complex-^-test ,@ params)))
        (return-from ,(if colon *outer-end* *inner-end*) nil))))
-
-(defun do-complex-^-test (a1 &optional (a2 nil) (a3 nil))
-  (cond (a3 (and (<= a1 a2) (<= a2 a3)))
-	(a2 (= a1 a2))
-	(t (= 0 a1))))
 
 ;delimited pairs of format directives. "(){}[]<>;"
 
@@ -722,7 +764,8 @@
 		      (failed-to-compile 14 "Too many clauses in ~~@[...~~]" *string* (1- start)))
 		    `(cond ((car args) ,@ (car innards)) (T ,(get-arg))))
 	    (T (let* ((j -1) (len (- (length chunks) 2))
-		      (else? (colonp *string* (1- (nth len chunks)))))
+		      (else? (colonp *string* (1- (the fixnum (nth len chunks))))))
+		 (declare (fixnum j))
 		 `(case ,(if params (car params) (get-arg))
 		    ,@(mapcar #'(lambda (unit)
 				  (incf j)
@@ -790,18 +833,9 @@
 						   (compile-format start end))))))))))
 			 (go L))))))))))
 
-(def-format-handler #\< (start end)
-  (if (colonp *string* (1- end))
-      (handle-logical-block start end)
-      (handle-standard-< start end)))
-
-(defun handle-standard-< (start end)
-  `(using-format xp ,(subseq *string* (1- start) end)
-		 ,@ (copy-tree (make-list (num-args-in-directive start end)
-					  :initial-element (get-arg)))))
-
 (defun num-args-in-directive (start end)
   (let ((n 0) c i j)
+    (declare (fixnum n))
     (incf n (num-args-in-args start T))
     (multiple-value-setq (j i) (next-directive1 *string* :start start :end end))
     (loop
@@ -821,36 +855,30 @@
 	    ((find c "AaSsDdBbOoXxRrCcFfEeGg$Pp")
 	     (incf n (1+ (num-args-in-args (1+ i) T))))))))
 
-;The pretty-printing directives. "_IW<:>"
+(defun handle-standard-< (start end)
+  (declare (fixnum start end))
+  `(using-format xp ,(subseq *string* (1- start) end)
+		 ,@ (copy-tree (make-list (num-args-in-directive start end)
+					  :initial-element (get-arg)))))
 
-(def-format-handler #\_ (start end) (declare (ignore end))
-  (multiple-value-bind (colon atsign) (parse-params start nil)
-    `(pxp.stream:pprint-newline+ ,(cond ((and colon atsign) :mandatory)
-			     (colon :fill)
-			     (atsign :miser)
-			     (T :linear)) XP)))
-
-(def-format-handler #\I (start end) (declare (ignore end))
-  (multiple-value-bind (colon atsign params)
-      (parse-params start '(0) :noatsign T)
-      (declare (ignore atsign))
-    `(pxp.stream:pprint-indent+ ,(if colon :current :block) ,(car params) XP)))
-
-(def-format-handler #\W (start end) (declare (ignore end))
-  (multiple-value-bind (colon atsign) (parse-params start nil)
-    (cond ((not (or colon atsign)) `(pxp.printer:write+ ,(get-arg) XP))
-	  (T `(let (,@(when colon
-			'((*print-pretty* T)))
-		    ,@(when atsign
-			'((*print-level* nil) (*print-length* nil))))
-		(pxp.printer:write+ ,(get-arg) XP))))))
+(declaim (ftype (function (boolean list) (values list &optional)) fill-transform))
+(defun fill-transform (doit? body)
+  (if (not doit?)
+      body
+      (mapcan #'(lambda (form)
+		  (cond ((eq (car form) 'pxp.stream:write-string++)
+			 (fill-transform-literal (cadr form)))
+			((eq (car form) 'pxp.stream:write-char++)
+			 (fill-transform-char (cadr form)))
+			(T (list form))))
+	      body)))
 
 (defun handle-logical-block (start end)
   (multiple-value-bind (colon atsign) (parse-params start nil)
     (setq start (1+ (params-end *string* :start start)))
     (let* ((chunks (chunk-up start end))
 	   (on-each-line?
-	     (and (cddr chunks) (atsignp *string* (1- (cadr chunks)))))
+	     (and (cddr chunks) (atsignp *string* (1- (the fixnum (cadr chunks))))))
 	   (prefix
 	     (cond ((cddr chunks) (pop chunks)
 		    (subseq *string* start (directive-start (car chunks))))
@@ -878,19 +906,36 @@
 			 (compile-format (car chunks)
 					 (directive-start (cadr chunks)))))))))))))
 
+(def-format-handler #\< (start end)
+  (if (colonp *string* (1- end))
+      (handle-logical-block start end)
+      (handle-standard-< start end)))
+
+;The pretty-printing directives. "_IW<:>"
+
+(def-format-handler #\_ (start end) (declare (ignore end))
+  (multiple-value-bind (colon atsign) (parse-params start nil)
+    `(pxp.stream:pprint-newline+ ,(cond ((and colon atsign) :mandatory)
+			     (colon :fill)
+			     (atsign :miser)
+			     (T :linear)) XP)))
+
+(def-format-handler #\I (start end) (declare (ignore end))
+  (multiple-value-bind (colon atsign params)
+      (parse-params start '(0) :noatsign T)
+      (declare (ignore atsign))
+    `(pxp.stream:pprint-indent+ ,(if colon :current :block) ,(car params) XP)))
+
+(def-format-handler #\W (start end) (declare (ignore end))
+  (multiple-value-bind (colon atsign) (parse-params start nil)
+    (cond ((not (or colon atsign)) `(pxp.printer:write+ ,(get-arg) XP))
+	  (T `(let (,@(when colon
+			'((*print-pretty* T)))
+		    ,@(when atsign
+			'((*print-level* nil) (*print-length* nil))))
+		(pxp.printer:write+ ,(get-arg) XP))))))
 
 
-(declaim (ftype (function (boolean list) (values list &optional)) fill-transform))
-(defun fill-transform (doit? body)
-  (if (not doit?)
-      body
-      (mapcan #'(lambda (form)
-		  (cond ((eq (car form) 'pxp.stream:write-string++)
-			 (fill-transform-literal (cadr form)))
-			((eq (car form) 'pxp.stream:write-char++)
-			 (fill-transform-char (cadr form)))
-			(T (list form))))
-	      body)))
 
 
 (declaim (ftype (function (character) (values cons &optional)) fill-transorm-char))
@@ -904,9 +949,15 @@
 (defun fill-transform-literal (string)
   (flet ((white-space (c) (or (char= c #\space) (char= c #\tab))))
     (do ((index 0 end) (result) (end nil nil)) (nil)
-      (let ((white (position-if #'white-space string :start index)))
+      (let ((white (locally
+		     #+sbcl
+		     (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+		     (position-if #'white-space string :start index))))
 	(when white
-	  (setq end (position-if-not #'white-space string :start (1+ white))))
+	  (setq end (locally
+		      #+sbcl
+		      (declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+		      (position-if-not #'white-space string :start (1+ white)))))
 	(when (null end)
 	  (setq end (length string)))
 	(push `(pxp.stream:write-string++ ,(subseq string index end) xp ,0 ,(- end index))
@@ -928,8 +979,7 @@
 	 (printer (cadr (safe-assoc :print-function name)))
 	 (xp-print-fn
 	   (intern (concatenate 'string
-		     "PRINT-" (string (package-name
-					(symbol-package struct-name)))
+		     "PRINT-" (package-name (symbol-package struct-name))
 		     ":" (string struct-name))
 		   (find-package :pxp))))
     (cond (printer
@@ -945,7 +995,10 @@
 		  (conc-name (cond ((null conc-name-spec)
 				    (concatenate 'string (string struct-name) "-"))
 				   ((null (cadr conc-name-spec)) "")
-				   (T (string (cadr conc-name-spec)))))
+				   (T (locally
+					#+sbcl
+					(declare (sb-ext:muffle-conditions sb-ext:compiler-note))
+					(string (cadr conc-name-spec))))))
 		  (slots (mapcar #'(lambda (x) (if (consp x) (car x) x)) body)))
 	     `(eval-when (:execute :load-toplevel :compile-toplevel)
 		(cl:defstruct ,name ,@ body)
@@ -953,9 +1006,9 @@
 		  (funcall (formatter "~@<#S(~;~W ~:I~@_~@{:~A ~W~^ ~:_~}~;)~:>") xp
 			   ',struct-name
 			   ,@(mapcan #'(lambda (slot)
-					 `(,(string slot)
+					 `(,(symbol-name slot)
 					    (,(intern (concatenate 'string
-					                 conc-name (string slot)))
+					                 conc-name (symbol-name slot)))
 					      obj)))
 				     slots)))
 		(setf (get ',struct-name 'pxp.printer::structure-printer) #',xp-print-fn)
