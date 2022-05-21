@@ -243,8 +243,8 @@
       (setq start j)
       (go L))))
 
-(declaim (ftype (function (string string) (values cons &optional)) formatter-fn))
-(defun formatter-fn (*string* *default-package*)
+(declaim (ftype (function (string string) (values cons &optional)) <formatter-fn>))
+(defun <formatter-fn> (*string* *default-package*)
   (handler-case `(apply #'pxp.stream:call-with-xp-stream
 			  (lambda (xp &rest args)
 			    ,@(bind-initial
@@ -264,7 +264,7 @@
 
 (defmacro formatter (string)
   `(lambda (s &rest args)
-     ,(formatter-fn string (package-name *package*))))
+     ,(<formatter-fn> string (package-name *package*))))
 
 (declaim (ftype (function (string boolean) (values (or string function) &optional))
 		maybe-compile-format-string))
@@ -381,7 +381,7 @@
     (declare (ignore arg))
   (unread-char sub-char stream)
   `(lambda (s &rest args)
-     ,(formatter-fn (read stream) (package-name *package*))))
+     ,(<formatter-fn> (read stream) (package-name *package*))))
 
 
 ;This gets called with start pointing to the character after the ~ that
